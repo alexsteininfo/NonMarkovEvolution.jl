@@ -1,12 +1,14 @@
 # Post-hoc statistics of a population or a lineage tree. Population methods return one
 # entry per living cell in increasing id order (`alive_cells(pop)`); root methods in
-# `Leaves(root)` order (`alive_cells(root)`), except `leaf_depths` by default.
+# `Leaves(root)` order (`alive_cells(root)`), except `leaf_depths` by default. All of them
+# work on the tree's index arrays: a population-wide spectrum is one reverse sweep over
+# the rows (children come after their parents), a subtree one pre-order listing.
 
 # ── Mutation burden and fitness ───────────────────────────────────────────────
 
 """
     mutations_per_cell(population) -> Vector{Int64}
-    mutations_per_cell(root::BinaryNode; includeclonal = false) -> Vector{Int64}
+    mutations_per_cell(root::CellNode; includeclonal = false) -> Vector{Int64}
 
 Mutation burden of every living cell: for a population, each cell's full burden in
 `alive_cells(population)` order; for a tree, in `Leaves(root)` order, where
@@ -18,12 +20,15 @@ Mutation burden of every living cell: for a population, each cell's full burden 
 
 For the founder of a simulated tree the two agree, because it carries no mutations.
 """
-mutations_per_cell(population::Population) =
-    Int64[node.data.total_mutations for node in alive_cells(population)]
+function mutations_per_cell(population::Population)
+    tree = population.tree
+    return Int64[tree.total[i] for i in _alive_idx(tree)]
+end
 
-function mutations_per_cell(root::BinaryNode{NonMarkovCell}; includeclonal::Bool = false)
-    offset = includeclonal ? 0 : root.data.total_mutations
-    return Int64[leaf.data.total_mutations - offset for leaf in _leaves(root)]
+function mutations_per_cell(root::CellNode; includeclonal::Bool = false)
+    tree, r = root.tree, _index(root)
+    offset = includeclonal ? 0 : Int64(tree.total[r])
+    return Int64[tree.total[i] - offset for i in _leaves_idx(tree, r)]
 end
 
 """
@@ -34,7 +39,7 @@ have no common ancestor.
 """
 function clonal_mutations(population::Population)
     mrca = find_mrca(population)
-    return isnothing(mrca) ? 0 : mrca.data.total_mutations
+    return isnothing(mrca) ? 0 : mrca.total_mutations
 end
 
 """
@@ -51,30 +56,36 @@ Variance of the mutation burden across living cells.
 """
 var_mutations(population::Population) = var(_burdens(population))
 
-# Burdens and fitnesses in `Dict` order, for summaries where order does not matter.
-_burdens(population::Population) =
-    Float64[node.data.total_mutations for node in values(population.cells)]
-_fitnesses(population::Population) =
-    Float64[node.data.fitness for node in values(population.cells)]
+# Burdens and fitnesses of the living cells, in id order.
+function _burdens(population::Population)
+    tree = population.tree
+    return Float64[tree.total[i] for i in _alive_idx(tree)]
+end
+function _fitnesses(population::Population)
+    tree = population.tree
+    return Float64[tree.fitness[i] for i in _alive_idx(tree)]
+end
 
 """
     fitness_per_cell(population) -> Vector{Float64}
 
 Fitness of every living cell, in `alive_cells(population)` order.
 """
-fitness_per_cell(population::Population) =
-    Float64[node.data.fitness for node in alive_cells(population)]
+fitness_per_cell(population::Population) = _fitnesses(population)
 
 """
-    leaf_fitness(root::BinaryNode) -> Vector{Float64}
+    leaf_fitness(root::CellNode) -> Vector{Float64}
 
 Fitness of every leaf under `root`, in `Leaves(root)` order — co-indexed with
 [`mutations_per_cell`](@ref)`(root)`.
 """
-leaf_fitness(root::BinaryNode) = Float64[leaf.data.fitness for leaf in _leaves(root)]
+function leaf_fitness(root::CellNode)
+    tree = root.tree
+    return Float64[tree.fitness[i] for i in _leaves_idx(tree, _index(root))]
+end
 
 """
-    filtered_mutations_per_cell(root::BinaryNode, threshold::Real) -> Vector{Int}
+    filtered_mutations_per_cell(root::CellNode, threshold::Real) -> Vector{Int}
 
 Per-leaf mutation burden, counted from the leaf up to and including `root`, leaving out
 the mutations of any ancestral node whose leaf count exceeds `floor(threshold * N)`, where
@@ -84,21 +95,22 @@ This is the tree-side analogue of dropping high-frequency variants before estima
 mutation rate. `threshold = 1.0` leaves nothing out, and on the top of a tree equals
 `mutations_per_cell(root; includeclonal = true)`. Returned in `Leaves(root)` order.
 """
-function filtered_mutations_per_cell(root::BinaryNode{NonMarkovCell}, threshold::Real)
-    nodes, parent = _preorder(root)
-    counts    = _leafcounts(nodes, parent)
+function filtered_mutations_per_cell(root::CellNode, threshold::Real)
+    tree = root.tree
+    nodes, ppos = _preorder_idx(tree, _index(root))
+    counts    = _leafcounts(tree, nodes, ppos)
     max_count = floor(Int, threshold * counts[1])
 
     # Forward sweep: parents precede children, so `above[p]` is final when read.
-    above  = zeros(Int, length(nodes))   # filtered burden down to and including node i
+    above  = zeros(Int, length(nodes))   # filtered burden down to and including node k
     result = Int[]
-    for i in eachindex(nodes)
-        node    = nodes[i]
-        inherit = parent[i] == 0 ? 0 : above[parent[i]]
-        if isleaf(node)
-            push!(result, inherit + node.data.mutations)
+    for k in eachindex(nodes)
+        i       = nodes[k]
+        inherit = ppos[k] == 0 ? 0 : above[ppos[k]]
+        if _isleaf(tree, i)
+            push!(result, inherit + tree.mutations[i])
         else
-            above[i] = inherit + (counts[i] <= max_count ? node.data.mutations : 0)
+            above[k] = inherit + (counts[k] <= max_count ? Int(tree.mutations[i]) : 0)
         end
     end
     return result
@@ -126,15 +138,15 @@ Number of mutations that differ between two cells: those on the path from each c
 their MRCA, excluding the MRCA itself. Cells in different trees share nothing, so their
 distance is the sum of both burdens.
 """
-function pairwise_distance(node1::BinaryNode{NonMarkovCell}, node2::BinaryNode{NonMarkovCell})
+function pairwise_distance(node1::CellNode, node2::CellNode)
     mrca   = find_mrca(node1, node2)
-    shared = isnothing(mrca) ? 0 : mrca.data.total_mutations
-    return node1.data.total_mutations + node2.data.total_mutations - 2shared
+    shared = isnothing(mrca) ? 0 : mrca.total_mutations
+    return node1.total_mutations + node2.total_mutations - 2shared
 end
 
 """
     pairwise_distances(population[, idx]) -> Vector{Int64}
-    pairwise_distances(root::BinaryNode[, idx]) -> Vector{Int64}
+    pairwise_distances(root::CellNode[, idx]) -> Vector{Int64}
 
 [`pairwise_distance`](@ref) for every pair of living cells, as a flat vector over pairs
 `i < j`. `idx` restricts to `alive_cells(population)[idx]` (or `alive_cells(root)[idx]`).
@@ -143,23 +155,24 @@ histogram use `StatsBase.countmap(pairwise_distances(...))`.
 """
 pairwise_distances(population::Population, idx = nothing) =
     _pairwise(pairwise_distance, Int64, alive_cells(population), idx)
-pairwise_distances(root::BinaryNode, idx = nothing) =
+pairwise_distances(root::CellNode, idx = nothing) =
     _pairwise(pairwise_distance, Int64, alive_cells(root), idx)
 
 # Time from `t` back to the division of the two cells' MRCA. For cells in different
 # trees this is, by convention, the time back to the earlier of the two founders' births.
-function _coalescence_time(node1::BinaryNode, node2::BinaryNode, t::Real)
-    node1 === node2 && return 0.0
+function _coalescence_time(node1::CellNode, node2::CellNode, t::Real)
+    node1 == node2 && return 0.0
     mrca = find_mrca(node1, node2)
     if isnothing(mrca)
-        return t - min(_treeroot(node1).data.birthtime, _treeroot(node2).data.birthtime)
+        root_birth(n) = n.tree.birthtime[_rootidx(n.tree, _index(n))]
+        return t - min(root_birth(node1), root_birth(node2))
     end
     return t - division_time(mrca)
 end
 
 """
     coalescence_times(population[, idx]; t = population.t) -> Vector{Float64}
-    coalescence_times(root::BinaryNode[, idx]; t = last_division_time(root)) -> Vector{Float64}
+    coalescence_times(root::CellNode[, idx]; t = last_division_time(root)) -> Vector{Float64}
 
 For every pair of living cells, the time from `t` back to the division of their MRCA.
 `idx` works as for [`pairwise_distances`](@ref). The two methods default to different
@@ -168,7 +181,7 @@ treated as coalescing at the earlier founder's birth, a convention.
 """
 coalescence_times(population::Population, idx = nothing; t::Real = population.t) =
     _pairwise((a, b) -> _coalescence_time(a, b, t), Float64, alive_cells(population), idx)
-coalescence_times(root::BinaryNode, idx = nothing; t::Real = last_division_time(root)) =
+coalescence_times(root::CellNode, idx = nothing; t::Real = last_division_time(root)) =
     _pairwise((a, b) -> _coalescence_time(a, b, t), Float64, alive_cells(root), idx)
 
 # ── Spectra ───────────────────────────────────────────────────────────────────
@@ -180,20 +193,42 @@ function _check_spectrum_length(nleaves::Int, N::Int, what::String)
     return nothing
 end
 
-# Add `weight(node)` to `spectrum[k]` for every node subtending k > 0 leaves.
-function _fill_spectrum!(spectrum::Vector, root::BinaryNode, weight, what::String)
-    nodes, parent = _preorder(root)
-    counts = _leafcounts(nodes, parent)
+# Add `weight(tree, i)` to `spectrum[k]` for every node `i` under `root` subtending k > 0
+# leaves.
+function _fill_spectrum!(spectrum::Vector, root::CellNode, weight, what::String)
+    tree = root.tree
+    nodes, ppos = _preorder_idx(tree, _index(root))
+    counts = _leafcounts(tree, nodes, ppos)
     _check_spectrum_length(counts[1], length(spectrum), what)
-    for (node, c) in zip(nodes, counts)
-        c > 0 && (spectrum[c] += weight(node))
+    @inbounds for k in eachindex(nodes)
+        c = counts[k]
+        c > 0 && (spectrum[c] += weight(tree, nodes[k]))
     end
     return spectrum
 end
 
+# The same over every live node of the whole tree (all roots), in one reverse sweep:
+# children have larger indices than their parents, so a node's count is final when the
+# sweep reaches it.
+function _fill_spectrum_all!(spectrum::Vector, tree::LineageTree, weight)
+    counts = zeros(Int32, length(tree))
+    parent = tree.parent
+    @inbounds for i in length(tree):-1:1
+        _isdead(tree, i) && continue
+        c = _isleaf(tree, i) ? Int32(1) : counts[i]
+        c > 0 && (spectrum[c] += weight(tree, i))
+        p = parent[i]
+        p > NOPARENT && (counts[p] += c)
+    end
+    return spectrum
+end
+
+_own_mutations(tree::LineageTree, i) = @inbounds Int64(tree.mutations[i])
+_is_internal(tree::LineageTree, i) = Int(_haschildren(tree, i))
+
 """
     site_frequency_spectrum(population) -> Vector{Int64}
-    site_frequency_spectrum(root::BinaryNode[, N]) -> Vector{Int64}
+    site_frequency_spectrum(root::CellNode[, N]) -> Vector{Int64}
 
 Mutation site-frequency spectrum: `sfs[k]` is the number of mutation events carried by
 exactly `k` living cells. For a population it has length `popsize(population)` and every
@@ -202,20 +237,14 @@ leaves; `N > n` pads with zeros (useful for sampled trees, where the meaningful 
 is the sample size), `N < n` is an error. Mutations on the root's own edge count as
 clonal, in `sfs[n]`.
 """
-function site_frequency_spectrum(population::Population)
-    sfs = zeros(Int64, popsize(population))
-    for root in _population_roots(population)
-        _fill_spectrum!(sfs, root, node -> node.data.mutations, "site_frequency_spectrum")
-    end
-    return sfs
-end
+site_frequency_spectrum(population::Population) =
+    _fill_spectrum_all!(zeros(Int64, popsize(population)), population.tree, _own_mutations)
 
-site_frequency_spectrum(root::BinaryNode, N::Int = popsize(root)) =
-    _fill_spectrum!(zeros(Int64, N), root, node -> node.data.mutations,
-                    "site_frequency_spectrum")
+site_frequency_spectrum(root::CellNode, N::Int = popsize(root)) =
+    _fill_spectrum!(zeros(Int64, N), root, _own_mutations, "site_frequency_spectrum")
 
 """
-    branch_spectrum(root::BinaryNode[, N]) -> Vector{Int}
+    branch_spectrum(root::CellNode[, N]) -> Vector{Int}
 
 Topological site-frequency spectrum: `bs[k]` is the number of internal nodes subtending
 exactly `k` leaves; leaves are not counted. Length and `N` work as for
@@ -227,13 +256,13 @@ daughter per division, `E[sfs[k]] = m * bs[k]` for `k ≥ 2` and
 leaves' own edges; `bs[1]` counts only *unary* internal nodes (divisions whose other
 lineage died out).
 """
-branch_spectrum(root::BinaryNode, N::Int = popsize(root)) =
-    _fill_spectrum!(zeros(Int, N), root, node -> Int(haschildren(node)), "branch_spectrum")
+branch_spectrum(root::CellNode, N::Int = popsize(root)) =
+    _fill_spectrum!(zeros(Int, N), root, _is_internal, "branch_spectrum")
 
 # ── Leaf divisional depths ────────────────────────────────────────────────────
 
 """
-    leaf_depths(root::BinaryNode; order = :stack) -> Vector{Int}
+    leaf_depths(root::CellNode; order = :stack) -> Vector{Int}
 
 Number of divisions on the path from `root` to each leaf. For neutral simulations this
 is the primary quantity: a leaf's burden of untracked neutral mutations at rate `m` is
@@ -245,22 +274,25 @@ is the primary quantity: a leaf's burden of untracked neutral mutations at rate 
 - `order = :leaves` — `Leaves(root)` order, co-indexed with
   [`mutations_per_cell`](@ref)`(root)` and [`leaf_fitness`](@ref).
 """
-function leaf_depths(root::BinaryNode{T}; order::Symbol = :stack) where T
+function leaf_depths(root::CellNode; order::Symbol = :stack)
     order in (:stack, :leaves) || throw(ArgumentError(
         "leaf_depths: order must be :stack or :leaves, got :$order"))
     leaves_order = order === :leaves
+    tree = root.tree
+    left, right = tree.left, tree.right
     depths = Int[]
-    stack  = Tuple{BinaryNode{T}, Int}[(root, 0)]
-    while !isempty(stack)
-        node, d = pop!(stack)
-        if isleaf(node)
+    stack  = Tuple{Int32, Int}[(_index(root), 0)]
+    @inbounds while !isempty(stack)
+        i, d = pop!(stack)
+        l, r = left[i], right[i]
+        if l == NOPARENT && r == NOPARENT
             push!(depths, d)
         elseif leaves_order     # push right first so that left pops first
-            isnothing(node.right) || push!(stack, (node.right, d + 1))
-            isnothing(node.left)  || push!(stack, (node.left,  d + 1))
+            r == NOPARENT || push!(stack, (r, d + 1))
+            l == NOPARENT || push!(stack, (l, d + 1))
         else
-            isnothing(node.left)  || push!(stack, (node.left,  d + 1))
-            isnothing(node.right) || push!(stack, (node.right, d + 1))
+            l == NOPARENT || push!(stack, (l, d + 1))
+            r == NOPARENT || push!(stack, (r, d + 1))
         end
     end
     return depths

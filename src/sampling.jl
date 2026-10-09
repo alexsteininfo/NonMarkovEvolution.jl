@@ -4,7 +4,7 @@
 # retains the resulting unary nodes rather than collapsing them. Every division ancestral
 # to a sampled cell is still a node, so a sampled cell's root-to-leaf path is unchanged:
 # `mutations_per_cell(root; includeclonal = true)` and `leaf_depths` return its full-tree
-# burden and divisional depth. It is the same shape `prune_tree!` leaves behind, so every
+# burden and divisional depth. It is the same shape `_prune!` leaves behind, so every
 # statistic applies to a sampled tree unchanged.
 
 """
@@ -13,7 +13,7 @@
 One uniform draw of `n` leaves from a lineage tree, with the induced tree.
 
 # Fields
-- `root::BinaryNode{NonMarkovCell}` — induced tree: the sampled leaves plus every
+- `root::CellNode` — root of the induced tree (its own [`LineageTree`](@ref)): the sampled leaves plus every
   ancestor of a sampled leaf, unary nodes retained. The original founder remains
   the root even when it has a single child, so `site_frequency_spectrum` counts its
   mutations in `sfs[n]` exactly as it does in `sfs[N]` for a full tree. **The root is
@@ -29,13 +29,12 @@ One uniform draw of `n` leaves from a lineage tree, with the induced tree.
 - `sampled_ids::Vector{Int64}` — `NonMarkovCell.id` of each drawn cell, in draw
   order.
 
-The induced tree **shares** `node.data` with the source tree: `NonMarkovCell` is
-immutable, so ids, birthtimes, mutation counts and fitness are identical by construction.
-Changing a node of the sampled tree (for example with [`set_fitness!`](@ref)) rebinds
-only that tree.
+The induced tree is a copy: ids, birthtimes, mutation counts and fitness are those of
+the source cells, and changing it (for example with [`set_fitness!`](@ref)) leaves the
+source untouched.
 """
 struct LeafSample
-    root::BinaryNode{NonMarkovCell}
+    root::CellNode
     n::Int
     N_full::Int
     seed::UInt64
@@ -43,26 +42,27 @@ struct LeafSample
     sampled_ids::Vector{Int64}
 end
 
-# Copy the marked part of the tree. Left/right slots are preserved, so a node whose
-# left lineage was dropped keeps `left = nothing` — the tree stays a faithful
-# sub-shape of the original rather than being re-balanced. Iterative, so deep trees
-# cannot overflow the stack.
-function _copy_marked(root::BinaryNode{NonMarkovCell},
-                      marked::Base.IdSet{BinaryNode{NonMarkovCell}})
-    new_root = BinaryNode(root.data)
-    stack = [(root, new_root)]
-    while !isempty(stack)
-        old, new = pop!(stack)
-        if !isnothing(old.left) && old.left in marked
-            new.left = BinaryNode{NonMarkovCell}(old.left.data, new)
-            push!(stack, (old.left, new.left))
-        end
-        if !isnothing(old.right) && old.right in marked
-            new.right = BinaryNode{NonMarkovCell}(old.right.data, new)
-            push!(stack, (old.right, new.right))
+# Copy the rows `kept` (sorted indices, `kept[1]` the root of the copy) into a new tree,
+# in the same order. Left/right slots are preserved, so a node whose left lineage was
+# dropped keeps no left child — the tree stays a faithful sub-shape of the original
+# rather than being re-balanced.
+function _copy_rows(tree::LineageTree, kept::Vector{Int32})
+    new = LineageTree()
+    sizehint!(new, length(kept))
+    newindex(i) = Int32(searchsortedfirst(kept, i))
+    for (k, i) in enumerate(kept)
+        p = k == 1 ? NOPARENT : newindex(tree.parent[i])
+        _push_node!(new, p, tree.id[i], tree.birthtime[i], tree.mutations[i],
+                    tree.total[i], tree.fitness[i])
+        if p != NOPARENT
+            if tree.left[tree.parent[i]] == i
+                new.left[p] = Int32(k)
+            else
+                new.right[p] = Int32(k)
+            end
         end
     end
-    return new_root
+    return new
 end
 
 # The first `n` entries of a uniformly random permutation of `1:N` (partial
@@ -79,8 +79,7 @@ function _draw_indices(rng::StableRNG, N::Int, n::Int)
 end
 
 # Draw from an already-collected leaf list, so `sample_trees` traverses the tree once.
-function _sample_leaves(root::BinaryNode{NonMarkovCell},
-                        leaves::Vector{BinaryNode{NonMarkovCell}},
+function _sample_leaves(root::CellNode, leaves::Vector{Int32},
                         n::Int, seed::UInt64, replicate::Int)
     N_full = length(leaves)
     1 <= n <= N_full || throw(ArgumentError(
@@ -89,19 +88,25 @@ function _sample_leaves(root::BinaryNode{NonMarkovCell},
 
     idx = _draw_indices(StableRNG(seed), N_full, n)
 
-    # Mark each sampled leaf and its ancestors, stopping at the first node already
-    # marked, so marking costs the number of retained nodes.
-    marked = Base.IdSet{BinaryNode{NonMarkovCell}}()
-    for i in idx
-        node = leaves[i]
-        while !isnothing(node) && !(node in marked)
-            push!(marked, node)
-            node = node.parent
+    # Mark each sampled leaf and its ancestors up to `root`, stopping at the first node
+    # already marked, so marking costs the number of retained nodes.
+    tree   = root.tree
+    r      = _index(root)
+    marked = falses(length(tree))
+    kept   = Int32[]
+    for k in idx
+        i = leaves[k]
+        while !marked[i]
+            marked[i] = true
+            push!(kept, i)
+            i == r && break
+            i = tree.parent[i]
         end
     end
+    sort!(kept)
 
-    new_root    = _copy_marked(root, marked)
-    sampled_ids = Int64[leaves[i].data.id for i in idx]
+    new_root    = CellNode(_copy_rows(tree, kept), 1)
+    sampled_ids = Int64[tree.id[leaves[k]] for k in idx]
     return LeafSample(new_root, n, N_full, seed, replicate, sampled_ids)
 end
 
@@ -128,21 +133,21 @@ Cost: one O(N) pass to list the leaves, plus the number of retained nodes.
     `StableRNG(seed)` drives a partial Fisher–Yates shuffle over `Leaves(root)` order.
     Stored samples depend on it; a golden test pins it.
 """
-sample_leaves(root::BinaryNode{NonMarkovCell}, n::Integer; seed::Integer,
-              replicate::Integer = 1) =
-    _sample_leaves(root, _leaves(root), Int(n), UInt64(seed), Int(replicate))
+sample_leaves(root::CellNode, n::Integer; seed::Integer, replicate::Integer = 1) =
+    _sample_leaves(root, _leaves_idx(root.tree, _index(root)), Int(n), UInt64(seed),
+                   Int(replicate))
 
 sample_leaves(population::Population, n::Integer; seed::Integer, replicate::Integer = 1) =
     sample_leaves(_sampling_root(population), n; seed = seed, replicate = replicate)
 
 # The unique root of a population, or an `ArgumentError` naming why there is none.
 function _sampling_root(population::Population)
-    roots = _population_roots(population)
+    roots = _rootidxs(population.tree)
     isempty(roots) && throw(ArgumentError("population has no cells to sample from"))
     length(roots) == 1 || throw(ArgumentError(
         "population has $(length(roots)) independent roots (it is a forest), but " *
         "sampling needs one — sample each root's tree separately"))
-    return only(roots)
+    return CellNode(population.tree, only(roots))
 end
 
 # ── Declaring what to produce ────────────────────────────────────────────────
@@ -210,7 +215,7 @@ Result of [`sample_trees`](@ref): the full tree (or `nothing` when
 `samples` is ordered by the spec's `sizes`, and within a size by `replicate`.
 """
 struct SampledTrees
-    full::Union{BinaryNode{NonMarkovCell}, Nothing}
+    full::Union{CellNode, Nothing}
     samples::Vector{LeafSample}
 end
 
@@ -241,9 +246,8 @@ Sampling is post-hoc: it applies to a tree that has finished growing. It is
 deliberately not part of `NonMarkovBlock` or `MeasurementSpec`, both of which
 describe things that happen *during* `simulate!`.
 """
-function sample_trees(root::BinaryNode{NonMarkovCell}, spec::SamplingSpec;
-                      seed::Integer)
-    leaves = _leaves(root)
+function sample_trees(root::CellNode, spec::SamplingSpec; seed::Integer)
+    leaves = _leaves_idx(root.tree, _index(root))
     N_full = length(leaves)
     for n in spec.sizes
         n <= N_full || throw(ArgumentError(

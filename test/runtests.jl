@@ -4,13 +4,13 @@ using Random
 using AbstractTrees
 using Distributions
 using Statistics
-using DataStructures
 using StableRNGs
 
 include("fixtures.jl")
 
 tests = [
     "initialisation",
+    "tree",
     "events",
     "simulations",
     "regression",
@@ -19,6 +19,8 @@ tests = [
     "statistics",
     "validation",
     "sampling",
+    "thinning",
+    "storage",
 ]
 
 @testset "NonMarkovEvolution.jl" begin

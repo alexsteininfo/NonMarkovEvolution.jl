@@ -34,7 +34,9 @@ The exact alternative is to change the regime by chaining blocks.
 Invalidating pending events when the environment changes would make density dependence
 exact. The conditional redraw it needs already exists (fresh schedules use it); what is
 missing is a heap with deletion, and the rejection cost grows for cells far into their
-cycle.
+cycle. For exponential waiting times it would be simpler: the `:thinning` loop could
+evaluate a cell's rates at each tick instead of at its birth, given a rate bound that
+holds for every density.
 
 ### Cell-cycle durations are independent between relatives
 

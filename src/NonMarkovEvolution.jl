@@ -2,7 +2,8 @@
     NonMarkovEvolution
 
 Stochastic, non-Markovian birth–death evolution of cell populations with fitness-changing
-mutations: per-cell fitness and the complete lineage tree of the survivors.
+mutations: per-cell fitness and the complete lineage tree of the survivors, stored as a
+struct of arrays.
 """
 module NonMarkovEvolution
 
@@ -10,7 +11,6 @@ using Distributions
 using Statistics
 using Random
 using AbstractTrees
-using DataStructures: BinaryMinHeap
 using StableRNGs: StableRNG
 
 export
@@ -19,9 +19,12 @@ NonMarkovBlock,
 
 # Cells, trees and the population
 NonMarkovCell,
-BinaryNode,
+CellNode,
+LineageTree,
 Population,
+add_root!,
 set_fitness!,
+isalive,
 
 # Simulation
 simulate!,
@@ -64,6 +67,10 @@ SamplingSpec,
 SampledTrees,
 sample_trees,
 
+# Storage
+save_tree,
+load_tree,
+
 # Measurements
 MeasurementSpec,
 MeasurementAccumulator,
@@ -82,15 +89,18 @@ MutationsPerCell,
 measure,
 statistic_name
 
-include("types.jl")
+include("tree.jl")
+include("queue.jl")
 include("blocks.jl")
+include("population.jl")
 include("events.jl")
-include("initialisation.jl")
 include("cellupdates.jl")
 include("simulation_trees.jl")
 include("statistics.jl")
 include("sampling.jl")
 include("measurements.jl")
+include("storage.jl")
 include("simulations.jl")
+include("thinning.jl")
 
 end

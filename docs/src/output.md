@@ -8,7 +8,7 @@ a [`Measurements`](@ref) record of what happened along the way.
 
 ```julia
 popsize(pop)          # number of living cells
-alive_cells(pop)      # their BinaryNodes, in increasing id order
+alive_cells(pop)      # their CellNodes, in increasing id order
 fitness_per_cell(pop) # one entry per living cell, same order
 mutations_per_cell(pop) # same order
 pop.t                 # time of the most recently processed event
@@ -16,20 +16,21 @@ pop                   # Population: 10000 cells (t = 14.212)
 ```
 
 Every per-cell population function returns cells in increasing id order, so their
-results are co-indexed with each other and reproducible. `pop.cells` is a `Dict` keyed by
-id; treat it as read-only, because adding or removing entries leaves the carried event
-queue inconsistent (the next `simulate!` throws until [`reset_schedule!`](@ref) is
-called).
+results are co-indexed with each other and reproducible. `pop.tree` is the
+[`LineageTree`](@ref) itself; treat it as read-only except through
+[`set_fitness!`](@ref).
 
 ## The tree
 
-The tree is never stored separately; it is reachable from any living cell through
-`parent` links:
+The tree is read through [`CellNode`](@ref) handles:
 
 ```julia
 root = single_root(pop)       # nothing if the population is a forest
+roots(pop)                    # every root of a forest
 
-node.data                     # the NonMarkovCell
+node.id, node.birthtime, node.fitness, node.mutations, node.total_mutations
+node.data                     # the same, as a NonMarkovCell value
+isalive(node)                 # a living cell (a leaf)?
 node.parent                   # nothing at the root
 node.left, node.right         # nothing at a leaf; one may be nothing at a unary node
 
@@ -40,9 +41,13 @@ popsize(root)                 # how many
 last_division_time(root)      # the last division in the tree — not pop.t
 ```
 
-`AbstractTrees` works on a `BinaryNode` (`Leaves`, `PreOrderDFS`, `print_tree`), and so
-does every root method on the [Tree statistics](statistics.md) page.
+`AbstractTrees` works on a `CellNode` (`Leaves`, `PreOrderDFS`, `print_tree`), and so
+does every root method on the [Tree statistics](statistics.md) page — those work on the
+tree's arrays directly and are much faster than a generic traversal.
 `last_division_time(root)` is earlier than `pop.t` when the run ended on a death.
+
+A handle stays valid while the tree changes, including when removed rows are compacted
+away; a handle on a cell that has since died and been removed throws when read.
 
 ## Recording while it runs
 
@@ -146,19 +151,20 @@ the rng leaves the run unchanged.
 
 ## Persisting a run
 
-`Population`, `BinaryNode` and `NonMarkovCell` are plain Julia types, so `Serialization`
-round-trips them:
+[`save_tree`](@ref) writes a population's tree (or any subtree) to a small binary file —
+the columns of the [`LineageTree`](@ref), about 44 bytes per node, written and read at
+disk speed — and [`load_tree`](@ref) reads it back:
 
-```julia
-using Serialization
-serialize("run.jls", pop)
-pop = deserialize("run.jls")
+```@example rec
+path = joinpath(mktempdir(), "run.nmet")
+save_tree(path, pop)
+tree, t = load_tree(path)
+root = single_root(tree)
+(filesize(path), t == pop.t, site_frequency_spectrum(root) == site_frequency_spectrum(pop))
 ```
 
-A serialised population carries its whole tree, so the file scales with the number of
-divisions, not with `popsize`. It also carries the event queue, drawn under the block you
-were running; call [`reset_schedule!`](@ref) before continuing it under a different
-block. Serialised data is tied to the package version that wrote it (0.4 cannot read 0.3
-trees). To store observables rather than the run, serialise the statistics, or a
-[`LeafSample`](@ref) — a real tree at a fraction of the size that replays exactly from
-its recorded seed.
+The format is versioned and does not depend on Julia's `Serialization`, so files stay
+readable across Julia and package versions. It stores the tree and the clock, not the
+event queue: a loaded tree is for analysis, not for continuing the simulation. To keep
+less, store statistics, or a [`LeafSample`](@ref) (its `root` saves the same way) — a
+real tree at a fraction of the size that replays exactly from its recorded seed.

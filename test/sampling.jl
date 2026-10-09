@@ -89,7 +89,7 @@ end
     s = sample_leaves(pop, 10; seed = UInt64(3))
     @test s.N_full == popsize(pop)
     @test s.n == 10
-    @test all(id -> haskey(pop.cells, id), s.sampled_ids)
+    @test s.sampled_ids ⊆ Set(c.id for c in alive_cells(pop))
 end
 
 @testset "INVARIANCE: burden and depth are the cell's full-tree values" begin
@@ -202,13 +202,16 @@ end
            [l.data.id for l in Leaves(root)]) == before
 end
 
-@testset "node data is shared, not copied" begin
+@testset "node data equals the source's, in a separate tree" begin
     root = sampling_fixture()
     s = sample_leaves(root, 3; seed = UInt64(1))
     src = Dict(l.data.id => l.data for l in Leaves(root))
     for leaf in Leaves(s.root)
-        @test leaf.data === src[leaf.data.id]
+        @test leaf.data == src[leaf.data.id]
     end
+    @test s.root.tree !== root.tree
+    set_fitness!(first(Leaves(s.root)), 9.0)
+    @test all(l -> l.fitness == 1.0, Leaves(root))   # the source is untouched
 end
 
 @testset "different seeds differ; one seed gives nested draws across n" begin
@@ -317,7 +320,7 @@ end
         @test s.N_full == popsize(pop)
         @test length(s.sampled_ids) == s.n
         @test allunique(s.sampled_ids)
-        @test all(id -> haskey(pop.cells, id), s.sampled_ids)
+        @test s.sampled_ids ⊆ Set(c.id for c in alive_cells(pop))
         @test length(collect(Leaves(s.root))) == s.n
     end
 
@@ -363,10 +366,7 @@ end
     # Two independent founders: single_root returns nothing, and both the
     # single-draw and the spec-driven entry points must say so rather than
     # silently sampling one tree of the forest.
-    pop = initialize_population(fitness_init = 1.0)
-    second = rootnode(pop._next_id + 1, 0.0, 0)
-    pop.cells[second.data.id] = second
-    pop._next_id += 1
+    pop = initialize_population(2; fitness_init = 1.0)
 
     @test_throws ArgumentError sample_leaves(pop, 1; seed = UInt64(1))
     @test_throws ArgumentError sample_trees(pop, SamplingSpec(1); seed = UInt64(1))

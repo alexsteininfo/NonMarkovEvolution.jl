@@ -144,11 +144,11 @@ end
     @test has_pending_schedule(pop)
     @test length(pop._pending) == popsize(pop)      # one event per cell
 
-    # Removing a cell by hand desynchronises the queue and must be caught, not silently
-    # simulated with a stale event pointing at a dead node.
-    victim = first(keys(pop.cells))
-    delete!(pop.cells, victim)
+    # A population whose cell count disagrees with its queue must be caught, not
+    # silently simulated with a stale event.
+    pop._nalive -= 1
     @test_throws ArgumentError simulate!(pop, chain_block(Nmax = 120), rng)
+    pop._nalive += 1
 
     # reset_schedule! is the documented recovery.
     @test reset_schedule!(pop) === pop
@@ -188,7 +188,7 @@ end
 @testset "conditioning is exact: residual time of an aged exponential cell" begin
     # Memorylessness: an Exponential(1) cell of age 3 has residual time ~ Exponential(1),
     # so the conditioned event time minus 3 must have mean ≈ 1.
-    heap = DataStructures.BinaryMinHeap{NonMarkovEvolution.CellEvent}()
+    q = NonMarkovEvolution.EventQueue()
     node = rootnode(1, 0.0, 0)
     block = NonMarkovBlock(birth_dist = f -> Exponential(1.0), death_dist = f -> Dirac(Inf),
         stopfunction = pop -> false, effect_dist = Dirac(0.0),
@@ -196,8 +196,8 @@ end
     rng = MersenneTwister(3)
     residuals = Float64[]
     for _ in 1:4000
-        NonMarkovEvolution.schedule_cell!(heap, node, block, rng, 3.0)
-        push!(residuals, pop!(heap).time - 3.0)
+        NonMarkovEvolution.schedule_cell!(q, node.tree, 1, block, rng, 3.0)
+        push!(residuals, pop!(q).time - 3.0)
     end
     @test all(>=(0), residuals)
     @test abs(mean(residuals) - 1.0) < 0.06

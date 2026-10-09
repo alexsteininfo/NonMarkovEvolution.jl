@@ -3,10 +3,10 @@
 
 # Hand-built cells must keep `total_mutations` consistent with the lineage: a root's
 # total is its own count, and a child adds its own count to its parent's total.
-rootnode(id, t, m, f = 1.0) = BinaryNode(NonMarkovCell(id, t, m, m, f))
+rootnode(id, t, m, f = 1.0) = CellNode(NonMarkovCell(id, t, m, m, f))
 
-function child!(side::Symbol, parent::BinaryNode, id, t, m, f = 1.0)
-    cell = NonMarkovCell(id, t, m, parent.data.total_mutations + m, f)
+function child!(side::Symbol, parent::CellNode, id, t, m, f = 1.0)
+    cell = NonMarkovCell(id, t, m, parent.total_mutations + m, f)
     return side === :left ? left_child!(parent, cell) : right_child!(parent, cell)
 end
 
@@ -46,7 +46,7 @@ end
 
 # Burden and depth of every leaf, keyed by cell id, computed by walking the tree
 # independently of the package's own functions.
-function id_burden_map(root::BinaryNode{NonMarkovCell})
+function id_burden_map(root::CellNode)
     m = Dict{Int64, Int}()
     for leaf in Leaves(root)
         muts, node = leaf.data.mutations, leaf
@@ -59,7 +59,7 @@ function id_burden_map(root::BinaryNode{NonMarkovCell})
     return m
 end
 
-function id_depth_map(root::BinaryNode{NonMarkovCell})
+function id_depth_map(root::CellNode)
     m = Dict{Int64, Int}()
     for leaf in Leaves(root)
         d, node = 0, leaf

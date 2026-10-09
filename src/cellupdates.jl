@@ -1,62 +1,46 @@
+# Division and death on the tree arrays.
+
 """
-    celldivision!(population, parent_node, t, block, mutation_count, rng) -> (d1, d2)
+    _divide!(population, p, t, block, mutation_count, rng) -> (d1, d2)
 
-Replace `parent_node` (which has just divided) with two daughter cells in the tree and
-in `population.cells`. Each daughter independently draws `j ~ mutation_count`
-mutations (`mutation_count` is `Poisson(block.ν)`, built once per `simulate!` call); for
-each mutation, `δ ~ block.effect_dist` and fitness is updated via `block.fitness_update`.
-Returns the two daughter `BinaryNode`s.
+Cell `p` divides at time `t`: append its two daughters (left, then right) to the tree
+and return their indices. Each daughter independently draws `j ~ mutation_count`
+mutations (`Poisson(block.ν)`, built once per `simulate!` call); for each,
+`δ ~ block.effect_dist` and the fitness is updated with `block.fitness_update`. The first
+daughter draws all of hers before the second.
 """
-function celldivision!(
-    population::Population,
-    parent_node::BinaryNode{NonMarkovCell},
-    t::Float64,
-    block::NonMarkovBlock,
-    mutation_count::Poisson,
-    rng::AbstractRNG,
-)
-    parent = parent_node.data
-
-    d1_data = _make_daughter(population, t, parent, block, mutation_count, rng)
-    d2_data = _make_daughter(population, t, parent, block, mutation_count, rng)
-
-    d1_node = left_child!(parent_node, d1_data)
-    d2_node = right_child!(parent_node, d2_data)
-
-    delete!(population.cells, parent.id)
-    population.cells[d1_data.id] = d1_node
-    population.cells[d2_data.id] = d2_node
-
-    return d1_node, d2_node
+@inline function _divide!(pop::Population, p::Int32, t::Float64, block::NonMarkovBlock,
+                          mutation_count::Poisson, rng::AbstractRNG)
+    tree = pop.tree
+    f0, total0 = @inbounds tree.fitness[p], tree.total[p]
+    j1, f1 = _draw_mutations(f0, block, mutation_count, rng)
+    j2, f2 = _draw_mutations(f0, block, mutation_count, rng)
+    id1 = pop._next_id + 1
+    pop._next_id += 2
+    d1 = _push_node!(tree, p, id1, t, j1, total0 + j1, f1)
+    d2 = _push_node!(tree, p, id1 + 1, t, j2, total0 + j2, f2)
+    @inbounds tree.left[p]  = d1
+    @inbounds tree.right[p] = d2
+    pop._nalive += 1
+    return d1, d2
 end
 
-function _make_daughter(
-    pop::Population,
-    t::Float64,
-    parent::NonMarkovCell,
-    block::NonMarkovBlock,
-    mutation_count::Poisson,
-    rng::AbstractRNG,
-)
+@inline function _draw_mutations(f::Float64, block::NonMarkovBlock, mutation_count::Poisson,
+                                 rng::AbstractRNG)
     j = rand(rng, mutation_count)
-    f = parent.fitness
     for _ in 1:j
-        δ = rand(rng, block.effect_dist)
-        f = block.fitness_update(f, δ)
+        f = block.fitness_update(f, rand(rng, block.effect_dist))
     end
-    pop._next_id += 1
-    return NonMarkovCell(pop._next_id, t, j, parent.total_mutations + j, f)
+    return j, Float64(f)
 end
 
 """
-    celldeath!(population, node)
+    _die!(population, i)
 
-Remove the dead cell `node` from the population and prune it from the lineage tree.
+Cell `i` dies: remove it and every ancestor left without living descendants.
 """
-function celldeath!(
-    population::Population,
-    node::BinaryNode{NonMarkovCell},
-)
-    prune_tree!(node)
-    delete!(population.cells, node.data.id)
+@inline function _die!(pop::Population, i::Int32)
+    _prune!(pop.tree, i)
+    pop._nalive -= 1
+    return nothing
 end

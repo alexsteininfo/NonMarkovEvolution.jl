@@ -62,8 +62,11 @@ mutations, chained two-phase runs, and an arbitrary initial condition.
   earlier happens — exact for any pair of distributions, with no rate bound or time
   step, because a cell's fitness cannot change before its own event.
 - **One global event heap** (the Next Reaction Method for a non-Markovian process), so
-  growing to `N` cells costs `O(N log N)`. The exponential is the special case in which
-  this and Gillespie agree.
+  growing to `N` cells costs `O(N log N)`. For exponential waiting times an exact
+  thinning loop takes over automatically, at `O(1)` per event.
+- **Built for large runs.** The tree is a struct of arrays (44 bytes per node, nothing
+  for the garbage collector to trace) and saves to a compact, versioned binary file;
+  growing to 10⁶ cells takes about a second.
 - **Any waiting-time law** — deterministic, exponential, Gamma, Weibull, log-normal, or
   your own — and it matters: at a fixed mean cycle the growth rate falls from `b` at
   Gamma shape `k = 1` to `b·ln 2` as `k → ∞`.

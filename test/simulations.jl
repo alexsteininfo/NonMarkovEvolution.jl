@@ -233,7 +233,7 @@ end
 
     @test injected[]
     fit_ids   = Set(c.data.id for c in alive_cells(pop) if c.data.fitness > 1.0)
-    clade_ids = Set(l.data.id for l in Leaves(root_of_clade[]) if haskey(pop.cells, l.data.id))
+    clade_ids = Set(l.data.id for l in Leaves(root_of_clade[]) if isalive(l))
     @test !isempty(fit_ids)
     @test fit_ids == clade_ids
     @test all(c.data.fitness == 1.0 for c in alive_cells(pop) if !(c.data.id in fit_ids))
@@ -264,7 +264,7 @@ end
         pop = initialize_population(fitness_init = 1.0)
         simulate!(pop, block, rng)
         injected[] || return NaN
-        n = count(l -> haskey(pop.cells, l.data.id), Leaves(clade[]))
+        n = count(isalive, Leaves(clade[]))
         return n / popsize(pop)
     end
     seeds = 101:118
@@ -294,6 +294,7 @@ end
             fitness_update = (f, δ) -> f,
             ν              = 0.0,
             restart_on_extinction = true,
+            algorithm      = :queue,      # the seed's narrative is a queue-algorithm stream
             on_division    = function (pop, parent, d1, d2)
                 injected[] && return nothing
                 popsize(pop) == 3 || return nothing
@@ -389,7 +390,8 @@ end
     risky = NonMarkovBlock(birth_dist = f -> Exponential(1.0),
         death_dist = f -> Exponential(0.9), stopfunction = p -> popsize(p) >= 60,
         effect_dist = Exponential(0.1), fitness_update = (f, δ) -> f + δ, ν = 1.0,
-        restart_on_extinction = true, on_restart = p -> (restarts[] += 1; nothing))
+        restart_on_extinction = true, on_restart = p -> (restarts[] += 1; nothing),
+        algorithm = :queue)
     simulate!(pop, risky, MersenneTwister(9))
     @test restarts[] >= 1
     root = single_root(pop)
@@ -405,4 +407,12 @@ end
     @test root.data.id == 1                    # the phase-1 founder is still the root
     @test minimum(c.data.id for c in alive_cells(pop)) > 0
     @test !isempty(ids_before)
+end
+
+@testset "restart_on_extinction on an extinct population throws instead of looping" begin
+    pop = initialize_population()
+    pop._nalive = 0
+    NonMarkovEvolution._prune!(pop.tree, Int32(1))
+    @test_throws ArgumentError simulate!(pop, make_block(restart = true), MersenneTwister(1))
+    @test pop._protect == 0
 end

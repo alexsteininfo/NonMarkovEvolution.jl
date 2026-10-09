@@ -106,7 +106,8 @@ end
 @testset "tree statistics agree with independent walks on a simulated tree" begin
     pop  = simple_pop(ν = 2.0, Nmax = 150)
     root = single_root(pop)
-    @test NonMarkovEvolution._leaves(root) == collect(Leaves(root))
+    @test [CellNode(root.tree, i) for i in NonMarkovEvolution._leaves_idx(root.tree, root.idx)] ==
+          collect(Leaves(root))
     @test alive_cells(root) == collect(Leaves(root))
     burden = id_burden_map(root)
     @test mutations_per_cell(root; includeclonal = true) ==
@@ -283,7 +284,7 @@ end
     @test isnothing(find_mrca(pop))
     @test clonal_mutations(pop) == 0
     @test length(coalescence_times(pop)) == 6
-    @test length(NonMarkovEvolution._roots(alive_cells(pop))) == 4
+    @test length(roots(alive_cells(pop))) == 4
 end
 
 @testset "pairwise helpers handle fewer than two cells" begin

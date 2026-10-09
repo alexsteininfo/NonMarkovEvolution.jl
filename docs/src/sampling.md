@@ -44,9 +44,9 @@ node, so a sampled cell's root-to-leaf path is unchanged:
 [`mutations_per_cell`](@ref)`(s.root; includeclonal = true)` and [`leaf_depths`](@ref)
 return exactly that cell's **full-tree** burden and depth. Collapsing would turn depth
 into a count of bifurcations that happened to survive sampling — a property of the
-sample, not of the cell. It is also the shape [`prune_tree!`](@ref
-NonMarkovEvolution.prune_tree!) leaves when a lineage dies out, so every statistic
-applies to a sampled tree unchanged.
+sample, not of the cell. It is also the shape
+[pruning](concepts.md#The-tree-records-the-survivors) leaves when a lineage dies out, so
+every statistic applies to a sampled tree unchanged.
 
 ```@example sampling
 full   = Dict(c.data.id => c.data.total_mutations for c in alive_cells(pop))
@@ -60,9 +60,9 @@ all(sample[id] == full[id] for id in s.sampled_ids)
     the founder's mutations in `sfs[n]` exactly as the full tree puts them in `sfs[N]`. For
     the sample's own MRCA use `find_mrca(alive_cells(s.root))`.
 
-The sampled tree shares `data` with the source: `NonMarkovCell` is immutable, so ids,
-times, mutation counts and fitness are identical by construction. Changing a node of the
-sampled tree (for example with [`set_fitness!`](@ref)) rebinds only that tree.
+The sampled tree is a copy in its own [`LineageTree`](@ref): ids, times, mutation counts
+and fitness are the source cells', and changing it (for example with
+[`set_fitness!`](@ref)) leaves the source untouched.
 
 ## Declaring what to produce
 
@@ -129,6 +129,10 @@ for (i, s) in enumerate(0.0:0.1:0.5)
     serialize("s=$(s).jls", out.samples)   # small: the samples, not the population
 end
 ```
+
+`serialize` keeps the samples' metadata (`n`, `seed`, `sampled_ids`) with them, but ties
+the file to Julia and package versions. For long-term storage write each tree with
+[`save_tree`](@ref)`(path, sample.root)` and the metadata as a small table.
 
 A `LeafSample` at ``n = 1000`` is a tree of a few thousand nodes, against a full history
 orders of magnitude larger — and it replays exactly from its recorded seed.

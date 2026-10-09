@@ -2,8 +2,7 @@
 
 ## A cell is a node in a binary tree
 
-The unit of state is a [`NonMarkovCell`](@ref), carried as the `data` of a
-[`BinaryNode`](@ref). It is immutable and holds five numbers:
+The unit of state is a cell: one node of a lineage tree. A cell has five numbers:
 
 | Field | Meaning |
 |:---|:---|
@@ -14,14 +13,33 @@ The unit of state is a [`NonMarkovCell`](@ref), carried as the `data` of a
 | `fitness::Float64` | the parent's fitness, updated once per new mutation |
 
 `mutations` is **local**: a mutation event sitting on one node is carried by exactly the
-leaves below it, which is what makes a site-frequency spectrum a single traversal.
+leaves below it, which is what makes a site-frequency spectrum a single pass.
 `total_mutations` is the cell's burden, stored so that burdens and distances are field
 reads rather than walks to the root. `fitness` is **cumulative** for the same reason: it
 is what the waiting-time distributions need, twice per division.
 
-Cells are replaced, never mutated. An `on_division` hook changes a daughter with
-[`set_fitness!`](@ref); a hand-built tree must keep `total_mutations` consistent (a root's
-total is its own count, a child adds its own count to its parent's).
+An `on_division` hook changes a daughter with [`set_fitness!`](@ref); nothing else about
+a cell changes after its birth. A hand-built tree must keep `total_mutations`
+consistent (a root's total is its own count, a child adds its own count to its
+parent's).
+
+### How the tree is stored
+
+All nodes live in one [`LineageTree`](@ref), a **struct of arrays**: node `i` is row `i`
+of the columns `parent`, `left`, `right` (row indices, `0` for none), `id`, `birthtime`,
+`fitness`, `mutations` and `total`. Rows are appended in creation order, so a child
+always comes after its parent. That has three consequences:
+
+- **No per-cell objects.** A division appends two rows; the garbage collector has no
+  tree of pointers to trace, whatever the population size. A node costs 44 bytes.
+- **Post-order for free.** Sweeping the rows backwards visits every child before its
+  parent, so spectra and leaf counts over the whole tree are one sequential pass.
+- **Ids increase along lineages,** which is what [`find_mrca`](@ref) relies on.
+
+You read the tree through [`CellNode`](@ref) handles — `node.fitness`, `node.parent`,
+`node.left`, `node.data` (a [`NonMarkovCell`](@ref) value) — which implement the
+AbstractTrees interface (`Leaves`, `PreOrderDFS`, `print_tree`). A handle stores the cell's
+id, so it stays valid when the rows move (see below).
 
 ## The tree records the survivors
 
@@ -31,6 +49,10 @@ removed, together with every ancestor it leaves childless. What you hold is ther
 supercritical process most cells ever born are in such lineages, and keeping them would
 dominate memory while contributing to no observable of the living population.
 
+Removal only marks a row. Once the marked rows reach half the tree (and at least 4096),
+one pass **compacts** them away, keeping the order of the rest, so the cost per death
+stays constant and memory follows the survivors.
+
 !!! note "Internal nodes can have one child"
     When one daughter's lineage dies out, its parent's division still happened and stays
     in the tree with a single child. Unary nodes are legitimate, and statistics rely on
@@ -39,22 +61,21 @@ dominate memory while contributing to no observable of the living population.
 
 ## The population is the living cells
 
-[`Population`](@ref) holds the living cells in a `Dict` keyed by id, so a birth or a
-death is ``O(1)``, together with the clock `pop.t` (the time of the last event) and the
-queue of pending events.
+[`Population`](@ref) holds the lineage tree (`pop.tree`), the number of living cells, the
+clock `pop.t` (the time of the last event) and the queue of pending events. The living
+cells are the tree's leaves.
 
 ```julia
 pop = initialize_population(fitness_init = 1.0)         # one founder
 pop = initialize_population(100; fitness_init = 1.0)    # 100 independent founders
 
 popsize(pop)        # number of living cells
-alive_cells(pop)    # their BinaryNodes, in increasing id order
+alive_cells(pop)    # their CellNodes, in increasing id order
 pop.t               # time of the most recently processed event
 single_root(pop)    # the root of the lineage tree (nothing for a forest)
 ```
 
-The tree is never stored separately: every living cell holds a `parent` chain back to its
-founder. `initialize_population(N)` with `N > 1` seeds **independent founders**, so the
+`initialize_population(N)` with `N > 1` seeds **independent founders**, so the
 population is a forest of `N` trees; see
 [Populations with more than one root](statistics.md#Populations-with-more-than-one-root).
 
@@ -78,25 +99,36 @@ treatment); see
 ## The event queue
 
 All pending events live in one global min-heap ordered by absolute time, with exactly one
-event per living cell. The loop is:
+event per living cell. An event is 16 bytes (time, row, division or death) and holds no
+pointers. The heap is 4-ary, half as deep as a binary one, which matters once it no
+longer fits in cache. The loop is:
 
 1. Stop if `stopfunction(pop)` holds, the next event lies beyond `tmax`, or the heap is
    empty.
-2. Pop the earliest event, ``O(\log N)``, and advance `pop.t` to its time.
-3. **Division**: replace the parent by two daughters (drawing their mutations and
-   fitness), call `on_division`, then schedule both daughters.
-   **Death**: prune the cell from the tree and the population.
+2. Take the earliest event, ``O(\log N)``, and advance `pop.t` to its time.
+3. **Division**: append two daughters (drawing their mutations and fitness), call
+   `on_division`, then draw both daughters' events. The first replaces the parent's
+   event at the top of the heap; the second is pushed.
+   **Death**: remove the event, and prune the cell from the tree.
 
-Growing from one cell to ``N`` costs ``O(N \log N)``.
+Growing from one cell to ``N`` costs ``O(N \log N)``. Events at exactly the same time
+(deterministic waiting times) fire in order of cell id.
 
-### Why this is not Gillespie
+### Exponential waiting times: the thinning path
 
 Gillespie draws the time to the next event anywhere in the population from one
 exponential with the summed rate. That factorisation holds only because the exponential
 is memoryless. Without it, cell ages matter, and an exact algorithm must track each
 cell's own residual time — which pre-drawing absolute event times and ordering them in a
-heap does. This is the Next Reaction Method for a non-Markovian process; the exponential
-is not a separate code path but the special case in which it and Gillespie agree.
+heap does. This is the Next Reaction Method for a non-Markovian process.
+
+When both waiting times *are* exponential, the package uses that shortcut instead
+(`algorithm = :thinning`, chosen automatically): one exponential clock at rate ``R N``,
+where ``R`` bounds every cell's ``b + d``; at each tick a uniformly chosen cell divides
+with probability ``b/R``, dies with probability ``d/R``, or nothing happens. It is exact,
+needs no heap, and costs ``O(1)`` per tick. ``R`` is the largest ``b + d`` seen so far, so
+it rises as selection raises fitness; the fraction of empty ticks is ``1 -
+\overline{b + d}/R``. See [the `algorithm` option](blocks.md#Choosing-the-algorithm).
 
 ## Why not the exponential?
 

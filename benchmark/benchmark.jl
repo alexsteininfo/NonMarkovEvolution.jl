@@ -1,6 +1,6 @@
-# Benchmark: growth from one cell to N cells with fitness-changing mutations, for several N,
-# the cost of the post-hoc tree statistics on the result, and a parallel throughput mode
-# (several simulations at once, one per thread).
+# Benchmark: growth from one cell to N cells with fitness-changing mutations, for several N
+# and four modes, the cost of the post-hoc tree statistics on the result, and a parallel
+# throughput mode (several simulations at once, one per thread).
 #
 # Inputs : population sizes on the command line (optional).
 # Outputs: timing and memory tables printed to stdout; nothing is written to disk.
@@ -11,7 +11,11 @@
 #
 # The model is the one of examples/01: Gamma(2) division times with mean 1/f,
 # Exponential(20) lifetimes, Poisson(ν = 0.5) mutations per daughter, each adding
-# δ ~ Exponential(0.05) to the fitness, restart_on_extinction = true.
+# δ ~ Exponential(0.05) to the fitness, restart_on_extinction = true. Modes:
+#   gamma            the model as is (queue algorithm)
+#   gamma+sizehint   the same, with sizehint!(pop, N) before the run
+#   exp/thinning     Exponential division times with mean 1/f (Markov), thinning
+#   exp/queue        the same Markov model forced onto the queue algorithm
 #
 # The sizes are run in increasing order. Each run measures the live memory per cell; a
 # larger run whose estimated peak memory exceeds 60% of the currently *free* RAM is skipped
@@ -34,27 +38,41 @@ const MEMORY_LIMIT = 0.6 * Sys.free_memory()   # bytes available for one run (sh
 const PEAK_FACTOR = 1.5                          # peak (GC, heap growth) relative to live size
 
 const SHAPE = 2.0                                # Gamma shape: CV of the division time 1/√2
-block(N) = NonMarkovBlock(
-    birth_dist     = f -> Gamma(SHAPE, 1.0 / (SHAPE * f)),
+gamma_birth(f) = Gamma(SHAPE, 1.0 / (SHAPE * f))
+exp_birth(f) = Exponential(1.0 / f)
+block(N; birth = gamma_birth, algorithm = :auto) = NonMarkovBlock(
+    birth_dist     = birth,
     death_dist     = f -> Exponential(20.0),
     stopfunction   = pop -> popsize(pop) >= N,
     effect_dist    = Exponential(0.05),
     fitness_update = (f, δ) -> f + δ,
     ν              = 0.5,
     restart_on_extinction = true,
+    algorithm      = algorithm,
 )
 
-# warm-up with the same block type as the measured runs (compilation is not timed)
-simulate!(initialize_population(), block(100), Xoshiro(0))
+# mode name => (block constructor, sizehint)
+const MODES = [
+    "gamma"          => (N -> block(N), false),
+    "gamma+sizehint" => (N -> block(N), true),
+    "exp/thinning"   => (N -> block(N; birth = exp_birth), false),
+    "exp/queue"      => (N -> block(N; birth = exp_birth, algorithm = :queue), false),
+]
+
+# warm-up with the same block types as the measured runs (compilation is not timed)
+for (_, (mk, _)) in MODES
+    simulate!(initialize_population(), mk(100), Xoshiro(0))
+end
 
 gb(x) = x / 2^30
 
 # One measured run, inside a function so that nothing (population, @timed result) survives it.
-function measure(N)
+function measure(mk, hint, N)
     GC.gc()
     baseline = Base.gc_live_bytes()
     pop = initialize_population()
-    stats = @timed simulate!(pop, block(N), Xoshiro(1))
+    hint && sizehint!(pop, N)
+    stats = @timed simulate!(pop, mk(N), Xoshiro(1))
     GC.gc()
     live = Base.gc_live_bytes() - baseline
     return (time = stats.time, gctime = stats.gctime, alloc = stats.bytes, live = live,
@@ -85,23 +103,25 @@ else
 @printf("Julia %s, %s, %d CPU threads\n", VERSION, Sys.cpu_info()[1].model, Sys.CPU_THREADS)
 @printf("RAM: %.1f GB total, %.1f GB free, limit per run: %.1f GB\n\n",
         gb(Sys.total_memory()), gb(Sys.free_memory()), gb(MEMORY_LIMIT))
-@printf("%14s %10s %8s %12s %12s %10s\n", "N", "time (s)", "GC (%)", "alloc (GB)",
-        "live (GB)", "ns/cell")
+@printf("%-15s %12s %10s %8s %12s %12s %10s\n", "mode", "N", "time (s)", "GC (%)",
+        "alloc (GB)", "live (GB)", "ns/cell")
 
-bytes_per_cell = nothing                         # measured on the previous run
-for N in SIZES
-    if !isnothing(bytes_per_cell)
-        estimate = PEAK_FACTOR * bytes_per_cell * N
-        if estimate > MEMORY_LIMIT
-            @printf("%14d   skipped: needs ≈ %.0f GB (limit %.0f GB)\n", N, gb(estimate),
-                    gb(MEMORY_LIMIT))
-            continue
+for (mode, (mk, hint)) in MODES
+    bytes_per_cell = nothing                     # measured on the previous run
+    for N in SIZES
+        if !isnothing(bytes_per_cell)
+            estimate = PEAK_FACTOR * bytes_per_cell * N
+            if estimate > MEMORY_LIMIT
+                @printf("%-15s %12d   skipped: needs ≈ %.0f GB (limit %.0f GB)\n", mode, N,
+                        gb(estimate), gb(MEMORY_LIMIT))
+                continue
+            end
         end
+        r = measure(mk, hint, N)
+        bytes_per_cell = r.live / r.n            # extrapolate from the latest (largest) run
+        @printf("%-15s %12d %10.2f %8.0f %12.2f %12.2f %10.0f\n", mode, N, r.time,
+                100 * r.gctime / r.time, gb(r.alloc), gb(r.live), 1e9 * r.time / N)
     end
-    r = measure(N)
-    global bytes_per_cell = r.live / r.n         # extrapolate from the latest (largest) run
-    @printf("%14d %10.2f %8.0f %12.2f %12.2f %10.0f\n", N, r.time, 100 * r.gctime / r.time,
-            gb(r.alloc), gb(r.live), 1e9 * r.time / N)
 end
 
 # Cost of the post-hoc statistics on one grown population (each called once to compile,

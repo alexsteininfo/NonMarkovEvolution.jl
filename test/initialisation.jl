@@ -3,7 +3,7 @@
     @test popsize(pop) == 1
     @test pop.t == 0.0
     @test pop._next_id == 1
-    cell = first(values(pop.cells)).data
+    cell = only(alive_cells(pop)).data
     @test cell.id == 1
     @test cell.fitness ≈ 2.0
     @test cell.mutations == 0
@@ -22,7 +22,7 @@ end
     pop = initialize_population(5; fitness_init = 1.5)
     @test popsize(pop) == 5
     @test pop._next_id == 5
-    for node in values(pop.cells)
+    for node in alive_cells(pop)
         @test node.data.fitness ≈ 1.5
         @test node.data.mutations == 0
     end
@@ -32,10 +32,12 @@ end
     pop = initialize_population(3)
     cells = alive_cells(pop)
     @test length(cells) == 3
-    @test eltype(cells) == BinaryNode{NonMarkovCell}
+    @test eltype(cells) == CellNode
+    @test [c.id for c in cells] == [1, 2, 3]
+    @test all(isalive, cells)
 end
 
 @testset "default fitness is 1.0" begin
     pop = initialize_population()
-    @test first(values(pop.cells)).data.fitness ≈ 1.0
+    @test only(alive_cells(pop)).fitness ≈ 1.0
 end

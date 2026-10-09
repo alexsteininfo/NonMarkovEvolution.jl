@@ -4,7 +4,7 @@ Everything here is computed after a run. Two families of methods exist:
 
 - **Population methods** take a [`Population`](@ref) and return one entry per living
   cell, in increasing id order (`alive_cells(pop)`).
-- **Root methods** take a `BinaryNode` and return one entry per leaf, in `Leaves(root)`
+- **Root methods** take a `CellNode` and return one entry per leaf, in `Leaves(root)`
   order (`alive_cells(root)`). They work on any subtree, including the induced tree of a
   [`sample_leaves`](@ref) draw.
 
@@ -171,8 +171,11 @@ find_mrca(node1, node2)      # nothing if in different trees
 find_mrca(nodes)             # of a vector of nodes
 find_mrca(pop)               # of all living cells
 single_root(nodes), roots(nodes)
-left_child!(parent, data)    # tree construction, for fixtures
-right_child!(parent, data)
+
+# tree construction, for fixtures: ids must increase with every node added
+root = CellNode(NonMarkovCell(1, 0.0, 0, 0, 1.0))          # a new one-node tree
+left_child!(root, NonMarkovCell(2, 1.0, 1, 1, 1.0))
+right_child!(root, NonMarkovCell(3, 1.0, 0, 0, 1.0))
 ```
 
 `find_mrca` relies on ids increasing along every lineage, which holds for every tree
@@ -181,10 +184,15 @@ right_child!(parent, data)
 ## Cost summary
 
 ``N`` is the number of living cells, ``D`` the typical depth, ``T`` the number of nodes.
+Population methods sweep the tree's rows in order, which is the cache-friendly case;
+root methods first list the subtree.
 
 | Function | Cost |
 |:---|:---|
-| `mutations_per_cell`, `fitness_per_cell`, `mean_mutations` | ``O(N)`` (population methods add an ``O(N \log N)`` sort) |
-| `site_frequency_spectrum`, `branch_spectrum`, `leaf_depths`, `filtered_mutations_per_cell`, `cell_lifetimes` | ``O(T)`` |
-| `single_root(pop)`, `find_mrca(pop)` | ``O(T)`` |
+| `mutations_per_cell`, `fitness_per_cell`, `mean_mutations` (population) | ``O(T)``, one sequential pass |
+| `site_frequency_spectrum(pop)` | ``O(T)``, one reverse pass |
+| root methods: spectra, `leaf_depths`, `filtered_mutations_per_cell`, `cell_lifetimes` | ``O(T)`` |
+| `single_root(pop)`, `roots(pop)`, `find_mrca(pop)` | ``O(T)`` |
 | `pairwise_distances`, `coalescence_times` | ``O(N^2 D)`` |
+
+At ``N = 10^6`` the population-wide burden and SFS take about 10–15 ms.

@@ -16,6 +16,7 @@ block = NonMarkovBlock(
     restart_on_extinction = false,
     on_division    = nothing,
     on_restart     = nothing,
+    algorithm      = :auto,                           # :queue or :thinning
 )
 ```
 
@@ -31,6 +32,7 @@ block = NonMarkovBlock(
 | `restart_on_extinction` | `Bool` | retry from the starting state if the population dies |
 | `on_division` | `(pop, parent, d1, d2) -> nothing` | hook at every division |
 | `on_restart` | `pop -> nothing` | hook after an extinction restart |
+| `algorithm` | `:auto`, `:queue`, `:thinning` | how events are generated; see [below](#Choosing-the-algorithm) |
 
 The waiting-time and mutation fields have no defaults on purpose: a default distribution
 would be a scientific claim smuggled in as a convenience. The constructor checks them
@@ -101,6 +103,25 @@ its coalescence times; a survival advantage makes it lose fewer branches.
     through the run. Deleterious effects need an explicit floor; see
     [Deleterious mutations](selection.md#Deleterious-mutations-and-mutational-load).
 
+## Choosing the algorithm
+
+Two exact algorithms generate the events:
+
+| `algorithm` | works for | per event | random stream |
+|:---|:---|:---|:---|
+| `:queue` | any waiting-time laws | ``O(\log N)`` heap operations | 0.4-compatible |
+| `:thinning` | `Exponential` division; `Exponential` or `Dirac(Inf)` death | ``O(1)`` per tick | its own |
+| `:auto` (default) | — | `:thinning` if both laws are inferred `Exponential`, else `:queue` | — |
+
+`block.algorithm` shows the choice. The two simulate the same Markov process, so results
+agree in distribution, not draw for draw: pass `algorithm = :queue` to reproduce a run made
+with an earlier version. `:thinning` discards a carried event queue (there is nothing to
+carry when waiting times are memoryless), and its cost per useful event grows with the
+spread of `b + d` across cells, because ticks on slow cells are discarded; see
+[Exponential waiting times](concepts.md#Exponential-waiting-times:-the-thinning-path).
+`:auto` never picks `:thinning` for a `Dirac` death law, which may be finite; ask for it
+explicitly when death is `Dirac(Inf)`.
+
 ## Stopping
 
 A block stops at the first of: `stopfunction(pop)` returning `true` (tested before every
@@ -123,6 +144,7 @@ stopfunction = pop -> popsize(pop) >= 10_000; tmax = 20.0       # whichever come
     It runs once per event, so a function that scans the population —
     `pop -> mean(fitness_per_cell(pop)) > 2` — makes the run quadratic. Track such a
     quantity incrementally in an `on_division` closure and have `stopfunction` read it.
+    Under `:thinning` it runs once per tick, discarded ticks included.
 
 ### Growth regimes
 
@@ -153,8 +175,8 @@ block = NonMarkovBlock(
 !!! warning "Density dependence is frozen at each cell's birth"
     A waiting time is drawn once, at birth, and never revised. The rule above therefore
     uses the density **as of each cell's birth**, and the population overshoots ``K`` —
-    even for exponential waiting times, where a true Gillespie implementation would
-    resample on every rate change.
+    even for exponential waiting times: `:thinning` also fixes each cell's rates at its
+    birth, where a true Gillespie implementation would resample on every rate change.
 
     The exact alternative is to change the *regime* rather than the rate, by chaining:
     grow to ``K`` under one block, then continue under a block with equal birth and death
@@ -286,6 +308,5 @@ The redraw is exact: each cell's next event is drawn by rejection from the new b
 laws, conditioned on nothing having happened to it before `pop.t`. It costs extra draws
 for old cells, and the run no longer matches an uninterrupted one draw for draw. If a
 cell has outlived what the new law allows (a `Dirac` clock, say), `simulate!` raises an
-error rather than looping. `reset_schedule!` is also the recovery after adding or
-removing cells in `pop.cells` by hand; [`has_pending_schedule`](@ref) tells whether a
-queue is carried.
+error rather than looping. [`has_pending_schedule`](@ref) tells whether a queue is
+carried; a `:thinning` block never leaves one.

@@ -1,15 +1,14 @@
-# `CellEvent` and its `Base.isless` method are defined in `types.jl`, because
-# `Population` needs the type in order to hold a queue of pending events.
+# Drawing a cell's next event for the queue algorithm.
 
 # Rejection draws allowed before `schedule_cell!` gives up on conditioning an old cell.
 const _MAX_CONDITIONING_DRAWS = 100_000
 
 """
-    schedule_cell!(heap, node, block, rng, tmin = node.data.birthtime)
+    _draw_event(tree, i, block, rng, tmin = tree.birthtime[i]) -> Event
 
-Pre-schedule the next event for `node` using competing risks: draw a division time from
+The next event of cell `i` by competing risks: draw a division time from
 `block.birth_dist` and a death time from `block.death_dist`, both measured from the
-cell's birth, and push the earlier one onto `heap`.
+cell's birth, and keep the earlier one (a tie goes to division).
 
 `tmin` is the earliest time the event may fire. For a newborn cell it is the birthtime
 and the first draw is always accepted. When an *existing* cell is rescheduled (a fresh
@@ -18,27 +17,31 @@ population with old birthtimes, [`reset_schedule!`](@ref), or an extinction rest
 after `tmin`. That is exact rejection sampling from the law of the cell's next event
 given that nothing happened to it before `tmin`.
 """
-function schedule_cell!(
-    heap::BinaryMinHeap{CellEvent},
-    node::BinaryNode{NonMarkovCell},
-    block::NonMarkovBlock,
-    rng::AbstractRNG,
-    tmin::Float64 = node.data.birthtime,
-)
-    f  = node.data.fitness
-    t0 = node.data.birthtime
+@inline function _draw_event(tree::LineageTree, i::Int32, block::NonMarkovBlock,
+                             rng::AbstractRNG, tmin::Float64 = @inbounds tree.birthtime[i])
+    f  = @inbounds tree.fitness[i]
+    t0 = @inbounds tree.birthtime[i]
     for _ in 1:_MAX_CONDITIONING_DRAWS
         t_div = t0 + rand(rng, block.birth_dist(f))
         t_die = t0 + rand(rng, block.death_dist(f))
         if min(t_div, t_die) >= tmin
-            # A tie goes to division.
-            push!(heap, t_div <= t_die ? CellEvent(t_div, node, true) :
-                                         CellEvent(t_die, node, false))
-            return nothing
+            return t_div <= t_die ? Event(t_div, i, true) : Event(t_die, i, false)
         end
     end
-    error("cell $(node.data.id), born at t = $t0, could not be given an event at or " *
-          "after t = $tmin in $_MAX_CONDITIONING_DRAWS draws: under this block it would " *
-          "almost surely have divided or died already. Its age is incompatible with the " *
-          "waiting-time distributions.")
+    _too_old(tree, i, tmin)
 end
+
+@noinline _too_old(tree, i, tmin) = error(
+    "cell $(tree.id[i]), born at t = $(tree.birthtime[i]), could not be given an event " *
+    "at or after t = $tmin in $_MAX_CONDITIONING_DRAWS draws: under this block it would " *
+    "almost surely have divided or died already. Its age is incompatible with the " *
+    "waiting-time distributions.")
+
+"""
+    schedule_cell!(queue, tree, i, block, rng, tmin = tree.birthtime[i])
+
+Draw cell `i`'s next event with [`_draw_event`](@ref) and push it onto `queue`.
+"""
+schedule_cell!(q::EventQueue, tree::LineageTree, i::Integer, block::NonMarkovBlock,
+               rng::AbstractRNG, tmin::Real = tree.birthtime[i]) =
+    push!(q, _draw_event(tree, Int32(i), block, rng, Float64(tmin)))
