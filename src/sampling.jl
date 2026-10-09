@@ -3,7 +3,7 @@
 # The induced tree keeps the sampled leaves plus *every ancestor* of a sampled leaf, and
 # retains the resulting unary nodes rather than collapsing them. Every division ancestral
 # to a sampled cell is still a node, so a sampled cell's root-to-leaf path is unchanged:
-# `drivers_per_cell(root; includeclonal = true)` and `leaf_depths` return its full-tree
+# `mutations_per_cell(root; includeclonal = true)` and `leaf_depths` return its full-tree
 # burden and divisional depth. It is the same shape `prune_tree!` leaves behind, so every
 # statistic applies to a sampled tree unchanged.
 
@@ -16,7 +16,7 @@ One uniform draw of `n` leaves from a lineage tree, with the induced tree.
 - `root::BinaryNode{NonMarkovCell}` — induced tree: the sampled leaves plus every
   ancestor of a sampled leaf, unary nodes retained. The original founder remains
   the root even when it has a single child, so `site_frequency_spectrum` counts its
-  drivers in `sfs[n]` exactly as it does in `sfs[N]` for a full tree. **The root is
+  mutations in `sfs[n]` exactly as it does in `sfs[N]` for a full tree. **The root is
   therefore the founder, not the MRCA of the sample** — call `find_mrca` on the sampled
   leaves if you need that.
 - `n::Int` — cells drawn.
@@ -30,7 +30,7 @@ One uniform draw of `n` leaves from a lineage tree, with the induced tree.
   order.
 
 The induced tree **shares** `node.data` with the source tree: `NonMarkovCell` is
-immutable, so ids, birthtimes, driver counts and fitness are identical by construction.
+immutable, so ids, birthtimes, mutation counts and fitness are identical by construction.
 Changing a node of the sampled tree (for example with [`set_fitness!`](@ref)) rebinds
 only that tree.
 """

@@ -10,7 +10,7 @@ a [`Measurements`](@ref) record of what happened along the way.
 popsize(pop)          # number of living cells
 alive_cells(pop)      # their BinaryNodes, in increasing id order
 fitness_per_cell(pop) # one entry per living cell, same order
-drivers_per_cell(pop) # same order
+mutations_per_cell(pop) # same order
 pop.t                 # time of the most recently processed event
 pop                   # Population: 10000 cells (t = 14.212)
 ```
@@ -54,12 +54,12 @@ using NonMarkovEvolution, Distributions, Random
 spec = MeasurementSpec(
     trajectory_dt     = 0.5,
     snapshot_triggers = [AtTime(3.0), AtPopSize(500), AtEnd()],
-    snapshot_stats    = [SFS(), FitnessDistribution(), DriversPerCell()],
+    snapshot_stats    = [SFS(), FitnessDistribution(), MutationsPerCell()],
 )
 acc   = MeasurementAccumulator(spec)
 block = NonMarkovBlock(
     birth_dist = f -> Gamma(5.0, 1 / (5 * f)), death_dist = f -> Exponential(5.0),
-    driver_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
+    effect_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
     stopfunction = pop -> popsize(pop) >= 1_000, restart_on_extinction = true)
 pop = simulate!(initialize_population(), block, MersenneTwister(4); accumulator = acc)
 m   = finalize_measurements(acc)
@@ -79,7 +79,7 @@ A [`TrajectoryPoint`](@ref) is recorded every `trajectory_dt` time units:
 | `t` | the grid time; the state is the exact state at that time |
 | `N_total` | population size |
 | `mean_fitness`, `var_fitness` | over living cells |
-| `mean_drivers`, `var_drivers` | driver burden over living cells |
+| `mean_mutations`, `var_mutations` | mutation burden over living cells |
 
 ```@example rec
 [(p.t, p.N_total, round(p.mean_fitness, digits = 3)) for p in m.trajectory[end-2:end]]
@@ -114,7 +114,7 @@ A [`SnapshotData`](@ref) holds one value per requested statistic, read by name:
 |:---|:---|:---|
 | [`SFS`](@ref)`()` | `:sfs` | [`site_frequency_spectrum`](@ref)`(pop)` |
 | [`FitnessDistribution`](@ref)`()` | `:fitness` | [`fitness_per_cell`](@ref)`(pop)` |
-| [`DriversPerCell`](@ref)`()` | `:drivers` | [`drivers_per_cell`](@ref)`(pop)`, co-indexed with `:fitness` |
+| [`MutationsPerCell`](@ref)`()` | `:mutations` | [`mutations_per_cell`](@ref)`(pop)`, co-indexed with `:fitness` |
 
 ```@example rec
 endsnap = only(s for s in m.snapshots if s.trigger isa AtEnd)
@@ -127,7 +127,7 @@ name unless you also define [`statistic_name`](@ref):
 ```@example rec
 using Statistics
 struct MeanBurden <: AbstractStatistic end
-NonMarkovEvolution.measure(::MeanBurden, pop) = mean(drivers_per_cell(pop))
+NonMarkovEvolution.measure(::MeanBurden, pop) = mean(mutations_per_cell(pop))
 
 acc2 = MeasurementAccumulator(MeasurementSpec(snapshot_triggers = [AtTime(2.0), AtEnd()],
                                               snapshot_stats = [MeanBurden()]))

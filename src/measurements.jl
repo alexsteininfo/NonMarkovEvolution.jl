@@ -74,14 +74,14 @@ function measure end
     statistic_name(stat::AbstractStatistic) -> Symbol
 
 The key under which a snapshot stores `stat`'s value (`snap[name]`). Defaults to the
-type name; the built-ins use `:sfs`, `:fitness` and `:drivers`.
+type name; the built-ins use `:sfs`, `:fitness` and `:mutations`.
 """
 statistic_name(stat::AbstractStatistic) = Symbol(nameof(typeof(stat)))
 
 """
     SFS()
 
-Snapshot statistic `:sfs` — the driver site-frequency spectrum,
+Snapshot statistic `:sfs` — the mutation site-frequency spectrum,
 [`site_frequency_spectrum`](@ref)`(pop)`.
 """
 struct SFS <: AbstractStatistic end
@@ -99,14 +99,14 @@ measure(::FitnessDistribution, pop::Population) = fitness_per_cell(pop)
 statistic_name(::FitnessDistribution) = :fitness
 
 """
-    DriversPerCell()
+    MutationsPerCell()
 
-Snapshot statistic `:drivers` — every living cell's driver burden,
-[`drivers_per_cell`](@ref)`(pop)`, co-indexed with `:fitness`.
+Snapshot statistic `:mutations` — every living cell's mutation burden,
+[`mutations_per_cell`](@ref)`(pop)`, co-indexed with `:fitness`.
 """
-struct DriversPerCell <: AbstractStatistic end
-measure(::DriversPerCell, pop::Population) = drivers_per_cell(pop)
-statistic_name(::DriversPerCell) = :drivers
+struct MutationsPerCell <: AbstractStatistic end
+measure(::MutationsPerCell, pop::Population) = mutations_per_cell(pop)
+statistic_name(::MutationsPerCell) = :mutations
 
 # ── Specification ─────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ MeasurementSpec(; trajectory_dt = Inf, snapshot_triggers = [AtEnd()],
     TrajectoryPoint
 
 The exact population state at grid time `t`: size `N_total`, and mean and variance of
-fitness and of the driver burden across living cells. Variances are `NaN` while only one
+fitness and of the mutation burden across living cells. Variances are `NaN` while only one
 cell is alive.
 """
 struct TrajectoryPoint
@@ -157,15 +157,15 @@ struct TrajectoryPoint
     N_total::Int
     mean_fitness::Float64
     var_fitness::Float64
-    mean_drivers::Float64
-    var_drivers::Float64
+    mean_mutations::Float64
+    var_mutations::Float64
 end
 
 """
     SnapshotData
 
 A snapshot taken when a trigger fires: its time `t`, the `trigger`, and one value per
-requested statistic, read by name — `snap[:sfs]`, `snap[:fitness]`, `snap[:drivers]` —
+requested statistic, read by name — `snap[:sfs]`, `snap[:fitness]`, `snap[:mutations]` —
 with `haskey(snap, name)` and `keys(snap)` to inspect what it holds.
 """
 struct SnapshotData

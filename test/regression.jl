@@ -11,14 +11,14 @@
 # package should. The stream differs on Julia 1.10, so the exact values are
 # asserted on Julia >= 1.11 only.
 
-@testset "golden: neutral configuration (Gamma k=5, d=0.5, ν=2.0, Dirac drivers)" begin
+@testset "golden: neutral configuration (Gamma k=5, d=0.5, ν=2.0, Dirac mutations)" begin
     rng = MersenneTwister(20260901)
     pop = initialize_population(fitness_init = 1.0)
     block = NonMarkovBlock(
         birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
         death_dist     = f -> Gamma(5.0, 1.0 / (5.0 * 0.5)),
         stopfunction   = pop -> popsize(pop) >= 100,
-        driver_dist    = Dirac(0.0),
+        effect_dist    = Dirac(0.0),
         fitness_update = (f, δ) -> f,
         ν              = 2.0,
     )
@@ -29,8 +29,8 @@
     @test all(f === 1.0 for f in fitness_per_cell(pop))
     if VERSION >= v"1.11"
         @test pop.t === 7.107669723464197
-        @test sum(drivers_per_cell(pop)) == 1810
-        @test sort(drivers_per_cell(pop)) == [
+        @test sum(mutations_per_cell(pop)) == 1810
+        @test sort(mutations_per_cell(pop)) == [
             8, 11, 11, 11, 11, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14,
             14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 17, 17,
             17, 17, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
@@ -38,8 +38,8 @@
             22, 23, 23, 23, 23, 23, 24, 24, 24, 25, 25, 25, 25, 25, 27, 27, 28, 29, 29, 29]
     else
         @test_skip pop.t === 7.107669723464197
-        @test_skip sum(drivers_per_cell(pop)) == 1810
-        @test_skip sort(drivers_per_cell(pop)) == [
+        @test_skip sum(mutations_per_cell(pop)) == 1810
+        @test_skip sort(mutations_per_cell(pop)) == [
             8, 11, 11, 11, 11, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14,
             14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 17, 17,
             17, 17, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
@@ -48,14 +48,14 @@
     end
 end
 
-@testset "golden: driver configuration (Exponential drivers, ν=0.5)" begin
+@testset "golden: mutation configuration (Exponential mutations, ν=0.5)" begin
     rng = MersenneTwister(20260902)
     pop = initialize_population(fitness_init = 1.0)
     block = NonMarkovBlock(
         birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
         death_dist     = f -> Gamma(5.0, 10.0 / 5.0),
         stopfunction   = pop -> popsize(pop) >= 100,
-        driver_dist    = Exponential(0.05),
+        effect_dist    = Exponential(0.05),
         fitness_update = (f, δ) -> f + δ,
         ν              = 0.5,
     )
@@ -95,11 +95,11 @@ end
         1.3747103628822632, 1.4052596476891026, 1.4825800163278604, 1.5009707683942342]
     if VERSION >= v"1.11"
         @test pop.t === 6.4000753169971
-        @test sum(drivers_per_cell(pop)) == 388
+        @test sum(mutations_per_cell(pop)) == 388
         @test fits == expected_fits
     else
         @test_skip pop.t === 6.4000753169971
-        @test_skip sum(drivers_per_cell(pop)) == 388
+        @test_skip sum(mutations_per_cell(pop)) == 388
         @test_skip fits == expected_fits
     end
 end
@@ -114,7 +114,7 @@ end
             birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
             death_dist     = f -> Gamma(5.0, 1.0 / (5.0 * 0.5)),
             stopfunction   = pop -> popsize(pop) >= 100,
-            driver_dist    = Dirac(0.0),
+            effect_dist    = Dirac(0.0),
             fitness_update = (f, δ) -> f,
             ν              = 2.0,
         )
@@ -126,5 +126,5 @@ end
     a, b = _run(hooks = false), _run(hooks = true)
     @test a.t === b.t
     @test popsize(a) == popsize(b)
-    @test sort(drivers_per_cell(a)) == sort(drivers_per_cell(b))
+    @test sort(mutations_per_cell(a)) == sort(mutations_per_cell(b))
 end

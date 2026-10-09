@@ -2,8 +2,8 @@
 
 ## Deliberately out of scope
 
-- **Neutral passengers** need no state: their burden is `Poisson(m * depth)` against
-  [`leaf_depths`](@ref) and their expected spectrum ``m`` times the
+- **Untracked neutral mutations** need no state: their burden is `Poisson(m * depth)`
+  against [`leaf_depths`](@ref) and their expected spectrum ``m`` times the
   [`branch_spectrum`](@ref). Deriving them afterwards is exact in distribution and lets
   one tree serve every ``m``; see [Neutral evolution](selection.md#Neutral-evolution).
 - **Extinct lineages** are pruned, because under a supercritical process they dominate

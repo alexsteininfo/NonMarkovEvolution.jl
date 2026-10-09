@@ -55,7 +55,7 @@ end
     root = sampling_fixture()
     s = sample_leaves(root, 3; seed = UInt64(1))
     @test sort(s.sampled_ids) == [3, 4, 5]
-    @test drivers_per_cell(s.root) == drivers_per_cell(root)
+    @test mutations_per_cell(s.root) == mutations_per_cell(root)
     @test leaf_depths(s.root)        == leaf_depths(root)
     @test site_frequency_spectrum(s.root, 3) == site_frequency_spectrum(root, 3)
     @test [l.data.id for l in Leaves(s.root)] == [l.data.id for l in Leaves(root)]
@@ -192,12 +192,12 @@ end
 
 @testset "the source tree is never mutated" begin
     root   = sampling_fixture()
-    before = (drivers_per_cell(root), leaf_depths(root),
+    before = (mutations_per_cell(root), leaf_depths(root),
               site_frequency_spectrum(root, 3), [l.data.id for l in Leaves(root)])
     sample_leaves(root, 1; seed = UInt64(3))
     sample_leaves(root, 2; seed = UInt64(4))
     sample_leaves(root, 3; seed = UInt64(5))
-    @test (drivers_per_cell(root), leaf_depths(root),
+    @test (mutations_per_cell(root), leaf_depths(root),
            site_frequency_spectrum(root, 3),
            [l.data.id for l in Leaves(root)]) == before
 end
@@ -226,7 +226,7 @@ end
     for n in (1, 10, 150)
         s   = sample_leaves(root, n; seed = UInt64(100 + n))
         sfs = site_frequency_spectrum(s.root, n)
-        @test sum(k * sfs[k] for k in 1:n) == sum(drivers_per_cell(s.root; includeclonal = true))
+        @test sum(k * sfs[k] for k in 1:n) == sum(mutations_per_cell(s.root; includeclonal = true))
     end
 end
 
@@ -324,7 +324,7 @@ end
     # n = N_full is the whole population: every statistic must match exactly.
     whole = out.samples[1]
     @test whole.n == popsize(pop)
-    @test sort(drivers_per_cell(whole.root)) == sort(drivers_per_cell(pop))
+    @test sort(mutations_per_cell(whole.root)) == sort(mutations_per_cell(pop))
     @test site_frequency_spectrum(whole.root, popsize(pop)) ==
           site_frequency_spectrum(pop)
     @test sort(leaf_depths(whole.root)) ==
@@ -338,7 +338,7 @@ end
         birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
         death_dist     = f -> Gamma(5.0, 1.0 / (5.0 * 0.5)),
         stopfunction   = pop -> popsize(pop) >= 200,
-        driver_dist    = Dirac(0.0),
+        effect_dist    = Dirac(0.0),
         fitness_update = (f, δ) -> f,
         ν              = 2.0,
         restart_on_extinction = true,

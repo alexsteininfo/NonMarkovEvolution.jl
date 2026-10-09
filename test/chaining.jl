@@ -11,7 +11,7 @@ function chain_block(; Nmax, ν = 0.5, shape = 5.0)
         birth_dist     = f -> Gamma(shape, 1.0 / (shape * f)),
         death_dist     = f -> Gamma(shape, 10.0 / shape),
         stopfunction   = pop -> popsize(pop) >= Nmax,
-        driver_dist    = Exponential(0.05),
+        effect_dist    = Exponential(0.05),
         fitness_update = (f, δ) -> f + δ,
         ν              = ν,
     )
@@ -37,7 +37,7 @@ end
         @test popsize(chained) == popsize(single)
         @test chained._next_id == single._next_id
         @test sort(fitness_per_cell(chained))   == sort(fitness_per_cell(single))
-        @test sort(drivers_per_cell(chained)) == sort(drivers_per_cell(single))
+        @test sort(mutations_per_cell(chained)) == sort(mutations_per_cell(single))
     end
 end
 
@@ -55,7 +55,7 @@ end
         b = chain_block(Nmax = Nmax)
         NonMarkovBlock(
             birth_dist = b.birth_dist, death_dist = b.death_dist,
-            stopfunction = b.stopfunction, driver_dist = b.driver_dist,
+            stopfunction = b.stopfunction, effect_dist = b.effect_dist,
             fitness_update = b.fitness_update, ν = b.ν, on_division = watcher,
         )
     end
@@ -172,7 +172,7 @@ end
         birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
         death_dist     = f -> Exponential(4.0),
         stopfunction   = pop -> popsize(pop) >= 200,
-        driver_dist    = Dirac(0.0),
+        effect_dist    = Dirac(0.0),
         fitness_update = (f, δ) -> f,
         ν              = 0.0,
         on_division    = (pop, parent, d1, d2) -> (push!(times, pop.t); nothing),
@@ -191,7 +191,7 @@ end
     heap = DataStructures.BinaryMinHeap{NonMarkovEvolution.CellEvent}()
     node = rootnode(1, 0.0, 0)
     block = NonMarkovBlock(birth_dist = f -> Exponential(1.0), death_dist = f -> Dirac(Inf),
-        stopfunction = pop -> false, driver_dist = Dirac(0.0),
+        stopfunction = pop -> false, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = 0.0)
     rng = MersenneTwister(3)
     residuals = Float64[]
@@ -207,7 +207,7 @@ end
     pop = initialize_population()
     pop.t = 5.0                                   # born at 0, would have divided at 1
     block = NonMarkovBlock(birth_dist = f -> Dirac(1.0), death_dist = f -> Dirac(Inf),
-        stopfunction = pop -> popsize(pop) >= 4, driver_dist = Dirac(0.0),
+        stopfunction = pop -> popsize(pop) >= 4, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = 0.0)
     @test_throws ErrorException simulate!(pop, block, MersenneTwister(1))
 end
@@ -216,11 +216,11 @@ end
     times = Float64[]
     watcher = (pop, parent, d1, d2) -> (push!(times, pop.t); nothing)
     grow = NonMarkovBlock(birth_dist = f -> Gamma(5.0, 0.2), death_dist = f -> Dirac(Inf),
-        stopfunction = pop -> popsize(pop) >= 3, driver_dist = Dirac(0.0),
+        stopfunction = pop -> popsize(pop) >= 3, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = 0.0)
     risky = NonMarkovBlock(birth_dist = f -> Exponential(1.0),
         death_dist = f -> Exponential(0.9),       # near-critical: extinction is common
-        stopfunction = pop -> popsize(pop) >= 40, driver_dist = Dirac(0.0),
+        stopfunction = pop -> popsize(pop) >= 40, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = 0.0, restart_on_extinction = true,
         on_division = watcher)
     pop = initialize_population()

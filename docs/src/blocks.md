@@ -8,7 +8,7 @@ is independently replaceable and cheap to sweep.
 block = NonMarkovBlock(
     birth_dist     = f -> Gamma(5.0, 1 / (5 * f)),   # required
     death_dist     = f -> Exponential(1 / 0.3),       # required
-    driver_dist    = Exponential(0.05),               # required
+    effect_dist    = Exponential(0.05),               # required
     fitness_update = (f, δ) -> f + δ,                 # required
     ν              = 0.2,                             # required
     stopfunction   = pop -> popsize(pop) >= 10_000,   # default: never
@@ -23,18 +23,18 @@ block = NonMarkovBlock(
 |:---|:---|:---|
 | `birth_dist` | `f -> Distribution` | waiting time from birth to division, given the cell's fitness |
 | `death_dist` | `f -> Distribution` | waiting time from birth to death |
-| `driver_dist` | `Distribution` | effect size ``δ`` of one driver mutation |
-| `fitness_update` | `(f, δ) -> f′` | how one driver changes fitness |
-| `ν` | `Real ≥ 0` | mean drivers per daughter per division (Poisson) |
+| `effect_dist` | `Distribution` | effect size ``δ`` of one mutation |
+| `fitness_update` | `(f, δ) -> f′` | how one mutation changes fitness |
+| `ν` | `Real ≥ 0` | mean mutations per daughter per division (Poisson) |
 | `stopfunction` | `pop -> Bool` | stop when it returns `true` |
 | `tmax` | `Real` | stop at exactly this time |
 | `restart_on_extinction` | `Bool` | retry from the starting state if the population dies |
 | `on_division` | `(pop, parent, d1, d2) -> nothing` | hook at every division |
 | `on_restart` | `pop -> nothing` | hook after an extinction restart |
 
-The waiting-time and driver fields have no defaults on purpose: a default distribution
+The waiting-time and mutation fields have no defaults on purpose: a default distribution
 would be a scientific claim smuggled in as a convenience. The constructor checks them
-once, by calling `birth_dist(1.0)` and `death_dist(1.0)`. `driver_dist`,
+once, by calling `birth_dist(1.0)` and `death_dist(1.0)`. `effect_dist`,
 `fitness_update` and `ν` are covered in [Mutations and selection](selection.md).
 
 ## Waiting-time modes
@@ -145,7 +145,7 @@ pop = initialize_population()
 block = NonMarkovBlock(
     birth_dist = f -> Gamma(k, 1 / (k * b * f * max(1e-6, 1 - popsize(pop) / K))),
     death_dist = f -> Gamma(k, 1 / (k * d)), tmax = 100.0,
-    driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0)
+    effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0)
 ```
 
 (The `max(1e-6, …)` floor matters: at ``N = K`` the bare factor is 0 and the scale `Inf`.)
@@ -188,7 +188,7 @@ are rescheduled conditioned on their age, so restarts are exact on any block.
 - **Your closures are not reset.** A hook holding a one-shot flag spends it on an attempt
   that later dies; reset it in `on_restart` (below).
 
-For a more selective retry (say, until a driver clone survives drift), leave the flag off
+For a more selective retry (say, until a mutation clone survives drift), leave the flag off
 and loop yourself, with a fresh closure per attempt:
 
 ```julia
@@ -211,7 +211,7 @@ end
 `on_division(pop, parent, d1, d2)` runs once per division, **after** both daughters exist
 and **before** either is scheduled, so a change applies to a daughter's own first
 division. It is for deterministic, state-triggered interventions the Poisson channel
-cannot express: injecting one driver into one cell at one moment, tallying a statistic
+cannot express: injecting one mutation into one cell at one moment, tallying a statistic
 incrementally, watching a lineage.
 
 Change a daughter with [`set_fitness!`](@ref); the new fitness is inherited by all its
@@ -225,13 +225,13 @@ injected    = Ref(false)
 block = NonMarkovBlock(
     birth_dist     = f -> Gamma(5.0, 1 / (5 * f)),
     death_dist     = f -> Exponential(10.0),
-    driver_dist    = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
+    effect_dist    = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
     stopfunction   = pop -> popsize(pop) >= 2_000,
     restart_on_extinction = true,
     on_division = function (pop, parent, d1, d2)
         if !injected[] && popsize(pop) == N_critic + 1
             injected[] = true
-            set_fitness!(d1, 1.0 + s)          # one driver, one cell, one moment
+            set_fitness!(d1, 1.0 + s)          # one mutation, one cell, one moment
         end
         return nothing
     end,
@@ -241,7 +241,7 @@ pop = simulate!(initialize_population(), block, MersenneTwister(1))
 count(>(1.0), fitness_per_cell(pop))       # cells descending from the boosted daughter
 ```
 
-A single injected driver can still be lost to drift — the boosted daughter may die
+A single injected mutation can still be lost to drift — the boosted daughter may die
 before it divides — so a study of its fate needs many seeds, or a retry loop that checks
 for the clone. Keep hook state in the closure: the package holds no global mutable state. A hook that
 does not draw from `rng` leaves the random stream untouched, so a watcher can be added to
@@ -273,7 +273,7 @@ draw for draw to the uninterrupted one.
 !!! note "Carried events keep the previous block's timing"
     A second block that changes `birth_dist` or `death_dist` therefore affects only cells
     scheduled after the boundary; the change phases in over about one cell cycle.
-    `driver_dist`, `fitness_update` and `ν` are read at division time and act at once.
+    `effect_dist`, `fitness_update` and `ν` are read at division time and act at once.
 
 To make new waiting-time laws act on every cell at once, discard the queue first:
 

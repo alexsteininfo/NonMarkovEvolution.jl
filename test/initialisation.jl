@@ -6,8 +6,8 @@
     cell = first(values(pop.cells)).data
     @test cell.id == 1
     @test cell.fitness ≈ 2.0
-    @test cell.drivers == 0
-    @test cell.total_drivers == 0
+    @test cell.mutations == 0
+    @test cell.total_mutations == 0
     @test cell.birthtime ≈ 0.0
 end
 
@@ -24,7 +24,7 @@ end
     @test pop._next_id == 5
     for node in values(pop.cells)
         @test node.data.fitness ≈ 1.5
-        @test node.data.drivers == 0
+        @test node.data.mutations == 0
     end
 end
 

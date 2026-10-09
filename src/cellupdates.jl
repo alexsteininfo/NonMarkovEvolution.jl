@@ -1,24 +1,24 @@
 """
-    celldivision!(population, parent_node, t, block, drivers, rng) -> (d1, d2)
+    celldivision!(population, parent_node, t, block, mutation_count, rng) -> (d1, d2)
 
 Replace `parent_node` (which has just divided) with two daughter cells in the tree and
-in `population.cells`. Each daughter independently draws `j ~ drivers` driver mutations
-(`drivers` is `Poisson(block.ν)`, built once per `simulate!` call); for each mutation,
-`δ ~ block.driver_dist` and fitness is updated via `block.fitness_update`. Returns the
-two daughter `BinaryNode`s.
+in `population.cells`. Each daughter independently draws `j ~ mutation_count`
+mutations (`mutation_count` is `Poisson(block.ν)`, built once per `simulate!` call); for
+each mutation, `δ ~ block.effect_dist` and fitness is updated via `block.fitness_update`.
+Returns the two daughter `BinaryNode`s.
 """
 function celldivision!(
     population::Population,
     parent_node::BinaryNode{NonMarkovCell},
     t::Float64,
     block::NonMarkovBlock,
-    drivers::Poisson,
+    mutation_count::Poisson,
     rng::AbstractRNG,
 )
     parent = parent_node.data
 
-    d1_data = _make_daughter(population, t, parent, block, drivers, rng)
-    d2_data = _make_daughter(population, t, parent, block, drivers, rng)
+    d1_data = _make_daughter(population, t, parent, block, mutation_count, rng)
+    d2_data = _make_daughter(population, t, parent, block, mutation_count, rng)
 
     d1_node = left_child!(parent_node, d1_data)
     d2_node = right_child!(parent_node, d2_data)
@@ -35,17 +35,17 @@ function _make_daughter(
     t::Float64,
     parent::NonMarkovCell,
     block::NonMarkovBlock,
-    drivers::Poisson,
+    mutation_count::Poisson,
     rng::AbstractRNG,
 )
-    j = rand(rng, drivers)
+    j = rand(rng, mutation_count)
     f = parent.fitness
     for _ in 1:j
-        δ = rand(rng, block.driver_dist)
+        δ = rand(rng, block.effect_dist)
         f = block.fitness_update(f, δ)
     end
     pop._next_id += 1
-    return NonMarkovCell(pop._next_id, t, j, parent.total_drivers + j, f)
+    return NonMarkovCell(pop._next_id, t, j, parent.total_mutations + j, f)
 end
 
 """

@@ -3,7 +3,7 @@ function make_block(; Nmax=50, ν=0.0, s_mean=0.1, restart=false)
         birth_dist     = f -> Gamma(2.0, 1.0 / f),
         death_dist     = f -> Gamma(2.0, 10.0),       # mean death time >> birth time
         stopfunction   = pop -> popsize(pop) >= Nmax,
-        driver_dist    = Exponential(s_mean),
+        effect_dist    = Exponential(s_mean),
         fitness_update = (f, δ) -> f + δ,
         ν              = ν,
         restart_on_extinction = restart,
@@ -33,11 +33,11 @@ end
     @test mean(fitness_per_cell(pop)) > 1.0
 end
 
-@testset "drivers_per_cell > 0 when ν>0" begin
+@testset "mutations_per_cell > 0 when ν>0" begin
     rng = MersenneTwister(5)
     pop = initialize_population(fitness_init = 1.0)
     simulate!(pop, make_block(Nmax = 50, ν = 2.0), rng)
-    @test mean(drivers_per_cell(pop)) > 0
+    @test mean(mutations_per_cell(pop)) > 0
 end
 
 @testset "birth_dist is sampled correctly (single-cell draws)" begin
@@ -56,7 +56,7 @@ end
             birth_dist     = f -> Gamma(shape, scale),
             death_dist     = f -> Gamma(2.0, 1000.0),   # negligible death
             stopfunction   = pop -> popsize(pop) >= 3,   # stop after first division
-            driver_dist    = Exponential(0.01),
+            effect_dist    = Exponential(0.01),
             fitness_update = (f, δ) -> f + δ,
             ν              = 0.0,
         )
@@ -83,7 +83,7 @@ end
         birth_dist     = f -> Exponential(1.0 / f),
         death_dist     = f -> Exponential(2.0 / f),   # death > birth, high extinction
         stopfunction   = pop -> popsize(pop) >= 10,
-        driver_dist    = Exponential(0.1),
+        effect_dist    = Exponential(0.1),
         fitness_update = (f, δ) -> f + δ,
         ν              = 0.0,
         restart_on_extinction = true,
@@ -98,18 +98,19 @@ end
     before = node.data
     @test set_fitness!(node, 2) === node
     @test node.data.fitness === 2.0
-    @test (node.data.id, node.data.birthtime, node.data.drivers, node.data.total_drivers) ==
-          (before.id, before.birthtime, before.drivers, before.total_drivers)
+    @test (node.data.id, node.data.birthtime, node.data.mutations,
+           node.data.total_mutations) ==
+          (before.id, before.birthtime, before.mutations, before.total_mutations)
 end
 
-@testset "daughters carry a consistent total_drivers" begin
+@testset "daughters carry a consistent total_mutations" begin
     pop  = initialize_population()
     simulate!(pop, make_block(Nmax = 200, ν = 1.5), MersenneTwister(8))
     root = single_root(pop)
     for node in PreOrderDFS(root)
-        expected = node.data.drivers +
-                   (isnothing(node.parent) ? 0 : node.parent.data.total_drivers)
-        @test node.data.total_drivers == expected
+        expected = node.data.mutations +
+                   (isnothing(node.parent) ? 0 : node.parent.data.total_mutations)
+        @test node.data.total_mutations == expected
     end
 end
 
@@ -154,7 +155,7 @@ end
         birth_dist     = f -> Gamma(2.0, 1.0 / f),
         death_dist     = f -> Gamma(2.0, 1.0e6),   # effectively d = 0
         stopfunction   = pop -> popsize(pop) >= 40,
-        driver_dist    = Exponential(0.05),
+        effect_dist    = Exponential(0.05),
         fitness_update = (f, δ) -> f + δ,
         ν              = 0.0,
         on_division    = function (pop, parent, d1, d2)
@@ -186,7 +187,7 @@ end
         birth_dist     = f -> Dirac(1.0 / f),
         death_dist     = f -> Dirac(1.0e6),
         stopfunction   = pop -> popsize(pop) >= 3,
-        driver_dist    = Dirac(0.0),
+        effect_dist    = Dirac(0.0),
         fitness_update = (f, δ) -> f,
         ν              = 0.0,
         on_division    = function (pop, parent, d1, d2)
@@ -206,7 +207,7 @@ end
     @test pop.t ≈ 1.5
 end
 
-@testset "a single injected driver forms exactly one clade" begin
+@testset "a single injected mutation forms exactly one clade" begin
     rng      = MersenneTwister(31337)
     N_critic = 8
     injected = Ref(false)
@@ -215,7 +216,7 @@ end
         birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
         death_dist     = f -> Gamma(5.0, 1.0e5),   # negligible death
         stopfunction   = pop -> popsize(pop) >= 120,
-        driver_dist    = Dirac(0.0),
+        effect_dist    = Dirac(0.0),
         fitness_update = (f, δ) -> f,
         ν              = 0.0,
         on_division    = function (pop, parent, d1, d2)
@@ -238,7 +239,7 @@ end
     @test all(c.data.fitness == 1.0 for c in alive_cells(pop) if !(c.data.id in fit_ids))
 end
 
-@testset "driver clone size increases with selection strength" begin
+@testset "mutation clone size increases with selection strength" begin
     N_critic = 8
     function _clone_fraction(s, seed)
         rng      = MersenneTwister(seed)
@@ -248,7 +249,7 @@ end
             birth_dist     = f -> Gamma(5.0, 1.0 / (5.0 * f)),
             death_dist     = f -> Gamma(5.0, 1.0e5),
             stopfunction   = pop -> popsize(pop) >= 300,
-            driver_dist    = Dirac(0.0),
+            effect_dist    = Dirac(0.0),
             fitness_update = (f, δ) -> f,
             ν              = 0.0,
             on_division    = function (pop, parent, d1, d2)
@@ -289,7 +290,7 @@ end
             birth_dist     = f -> Exponential(1.0 / f),
             death_dist     = f -> Exponential(2.0 / f),   # death > birth, high extinction
             stopfunction   = pop -> popsize(pop) >= 10,
-            driver_dist    = Dirac(0.0),
+            effect_dist    = Dirac(0.0),
             fitness_update = (f, δ) -> f,
             ν              = 0.0,
             restart_on_extinction = true,
@@ -318,10 +319,11 @@ end
         @test with_reset.popsize >= 10
         @test with_reset.restarts >= 1        # this seed does go extinct
         @test with_reset.injections >= 2      # it re-injected after a restart
-        @test with_reset.boosted              # the surviving population carries the driver
+        @test with_reset.boosted              # the surviving population carries the mutation
 
         # Same seed, same everything, except the hook does not reset its own flag: the one
-        # injection is spent on a doomed attempt and the surviving population has no driver.
+        # injection is spent on a doomed attempt and the surviving population has no
+        # injected mutation.
         # This is the failure mode `on_restart` exists to prevent.
         without_reset = _restart_run(false)
         @test without_reset.restarts == with_reset.restarts
@@ -339,11 +341,11 @@ end
 
 @testset "NonMarkovBlock validates its inputs" begin
     ok = (birth_dist = f -> Exponential(1.0), death_dist = f -> Exponential(2.0),
-          driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f)
+          effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f)
     @test NonMarkovBlock(; ok..., ν = 0.0).stopfunction(initialize_population()) == false
     @test_throws ArgumentError NonMarkovBlock(; ok..., ν = -0.1)
     @test_throws ArgumentError NonMarkovBlock(; ok..., ν = 0.1, tmax = NaN)
-    @test_throws ArgumentError NonMarkovBlock(; ok..., ν = 0.1, driver_dist = 0.05)
+    @test_throws ArgumentError NonMarkovBlock(; ok..., ν = 0.1, effect_dist = 0.05)
     @test_throws ArgumentError NonMarkovBlock(; ok..., ν = 0.1, birth_dist = f -> 1.0 / f)
     @test_throws ArgumentError NonMarkovBlock(; ok..., ν = 0.1,
                                               death_dist = f -> MvNormal([1.0], [1.0;;]))
@@ -351,7 +353,7 @@ end
 
 @testset "tmax stops exactly at tmax and keeps the next event queued" begin
     block(tmax) = NonMarkovBlock(birth_dist = f -> Dirac(1.0), death_dist = f -> Dirac(Inf),
-        driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0, tmax = tmax)
+        effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0, tmax = tmax)
     pop = initialize_population()
     simulate!(pop, block(2.5), MersenneTwister(1))
     @test pop.t == 2.5
@@ -364,7 +366,7 @@ end
 @testset "a run split at tmax equals the uninterrupted run" begin
     # Pure birth, so no seed can go extinct before tmax on any Julia version.
     mk(; kw...) = NonMarkovBlock(; birth_dist = f -> Gamma(5.0, 1 / (5f)),
-        death_dist = f -> Dirac(Inf), driver_dist = Exponential(0.05),
+        death_dist = f -> Dirac(Inf), effect_dist = Exponential(0.05),
         fitness_update = (f, δ) -> f + δ, ν = 0.5, kw...)
     single = initialize_population()
     simulate!(single, mk(stopfunction = p -> popsize(p) >= 300), MersenneTwister(3))
@@ -374,7 +376,7 @@ end
     simulate!(split, mk(stopfunction = p -> popsize(p) >= 300), rng)
     @test split.t === single.t
     @test fitness_per_cell(split) == fitness_per_cell(single)
-    @test drivers_per_cell(split) == drivers_per_cell(single)
+    @test mutations_per_cell(split) == mutations_per_cell(single)
 end
 
 @testset "an extinction restart restores the tree in place" begin
@@ -386,7 +388,7 @@ end
     restarts = Ref(0)
     risky = NonMarkovBlock(birth_dist = f -> Exponential(1.0),
         death_dist = f -> Exponential(0.9), stopfunction = p -> popsize(p) >= 60,
-        driver_dist = Exponential(0.1), fitness_update = (f, δ) -> f + δ, ν = 1.0,
+        effect_dist = Exponential(0.1), fitness_update = (f, δ) -> f + δ, ν = 1.0,
         restart_on_extinction = true, on_restart = p -> (restarts[] += 1; nothing))
     simulate!(pop, risky, MersenneTwister(9))
     @test restarts[] >= 1
@@ -395,9 +397,9 @@ end
     for node in PreOrderDFS(root)
         isnothing(node.left)  || @test node.left.parent  === node
         isnothing(node.right) || @test node.right.parent === node
-        expected = node.data.drivers +
-                   (isnothing(node.parent) ? 0 : node.parent.data.total_drivers)
-        @test node.data.total_drivers == expected
+        expected = node.data.mutations +
+                   (isnothing(node.parent) ? 0 : node.parent.data.total_mutations)
+        @test node.data.total_mutations == expected
     end
     @test Set(l.data.id for l in Leaves(root)) == Set(c.data.id for c in alive_cells(pop))
     @test root.data.id == 1                    # the phase-1 founder is still the root

@@ -7,7 +7,7 @@
 # the size is 2^floor(t) and every observable has a closed form.
 clock_block(Nmax) = NonMarkovBlock(
     birth_dist = f -> Dirac(1.0), death_dist = f -> Dirac(Inf),
-    stopfunction = pop -> popsize(pop) >= Nmax, driver_dist = Dirac(0.0),
+    stopfunction = pop -> popsize(pop) >= Nmax, effect_dist = Dirac(0.0),
     fitness_update = (f, δ) -> f, ν = 0.0)
 
 @testset "MeasurementSpec and triggers validate their inputs" begin
@@ -33,7 +33,7 @@ end
 
 @testset "AtTime records the state exactly at t, labelled t" begin
     spec = MeasurementSpec(snapshot_triggers = [AtTime(0.0), AtTime(1.5), AtTime(9.0)],
-                           snapshot_stats = [FitnessDistribution(), DriversPerCell()])
+                           snapshot_stats = [FitnessDistribution(), MutationsPerCell()])
     acc  = MeasurementAccumulator(spec)
     simulate!(initialize_population(), clock_block(8), MersenneTwister(1); accumulator = acc)
     snaps = finalize_measurements(acc).snapshots
@@ -53,7 +53,7 @@ end
 
 @testset "trajectory statistics match a direct computation" begin
     spec = MeasurementSpec(trajectory_dt = 1.0, snapshot_triggers = [AtEnd()],
-                           snapshot_stats = [FitnessDistribution(), DriversPerCell()])
+                           snapshot_stats = [FitnessDistribution(), MutationsPerCell()])
     acc  = MeasurementAccumulator(spec)
     pop  = initialize_population()
     simulate!(pop, grow_block(Nmax = 150, ν = 1.0), MersenneTwister(4); accumulator = acc)
@@ -62,7 +62,7 @@ end
     if last_pt.t == pop.t           # only then is the last point the final state
         @test last_pt.mean_fitness ≈ mean(endsnap[:fitness])
     end
-    @test endsnap[:drivers] == drivers_per_cell(pop)
+    @test endsnap[:mutations] == mutations_per_cell(pop)
     @test endsnap[:fitness] == fitness_per_cell(pop)     # co-indexed by id
     @test all(p -> p.N_total >= 1, m.trajectory)
     @test issorted([p.t for p in m.trajectory])
@@ -79,7 +79,7 @@ end
     boundary = pop.t
     risky = NonMarkovBlock(birth_dist = f -> Exponential(1.0),
         death_dist = f -> Exponential(0.9), stopfunction = p -> popsize(p) >= 30,
-        driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
+        effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
         restart_on_extinction = true)
     simulate!(pop, risky, rng; accumulator = acc)
     m = finalize_measurements(acc)
@@ -126,7 +126,7 @@ end
 
 @testset "tmax: trajectory and AtTime reach exactly tmax" begin
     block = NonMarkovBlock(birth_dist = f -> Dirac(1.0), death_dist = f -> Dirac(Inf),
-        driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0, tmax = 2.5)
+        effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0, tmax = 2.5)
     acc = MeasurementAccumulator(MeasurementSpec(trajectory_dt = 0.5,
                                                  snapshot_triggers = [AtTime(2.5), AtEnd()]))
     simulate!(initialize_population(), block, MersenneTwister(1); accumulator = acc)

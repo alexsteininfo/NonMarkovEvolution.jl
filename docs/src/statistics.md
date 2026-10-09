@@ -12,37 +12,37 @@ Everything here is computed after a run. Two families of methods exist:
 using NonMarkovEvolution, Distributions, Random, Statistics
 block = NonMarkovBlock(
     birth_dist = f -> Gamma(5.0, 1 / (5 * f)), death_dist = f -> Exponential(4.0),
-    driver_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
+    effect_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
     stopfunction = pop -> popsize(pop) >= 500, restart_on_extinction = true)
 pop  = simulate!(initialize_population(), block, MersenneTwister(11))
 root = single_root(pop)
 popsize(root)
 ```
 
-## Driver burden
+## Mutation burden
 
 ```julia
-drivers_per_cell(pop)                          # full burden per living cell
-drivers_per_cell(root)                         # acquired strictly below root (default)
-drivers_per_cell(root; includeclonal = true)   # full burden, in Leaves order
-mean_drivers(pop), var_drivers(pop)
-clonal_drivers(pop)                            # carried by every living cell
+mutations_per_cell(pop)                          # full burden per living cell
+mutations_per_cell(root)                         # acquired strictly below root (default)
+mutations_per_cell(root; includeclonal = true)   # full burden, in Leaves order
+mean_mutations(pop), var_mutations(pop)
+clonal_mutations(pop)                            # carried by every living cell
 ```
 
-Burdens are stored on the cells (`total_drivers`), so these are ``O(N)``. For a root
-method, `includeclonal` says whether drivers carried by *every* leaf under `root` count:
-with the default `false`, `root`'s own drivers and its ancestors' are left out, because
+Burdens are stored on the cells (`total_mutations`), so these are ``O(N)``. For a root
+method, `includeclonal` says whether mutations carried by *every* leaf under `root` count:
+with the default `false`, `root`'s own mutations and its ancestors' are left out, because
 they are clonal in that subtree. For the founder of a simulated tree the two agree.
-[`clonal_drivers`](@ref) is the burden of the MRCA of all living cells, `0` on a forest.
+[`clonal_mutations`](@ref) is the burden of the MRCA of all living cells, `0` on a forest.
 
 ```@example stats
 sub = find_mrca(alive_cells(root)[1:20])
-(mean(drivers_per_cell(sub)), mean(drivers_per_cell(sub; includeclonal = true)))
+(mean(mutations_per_cell(sub)), mean(mutations_per_cell(sub; includeclonal = true)))
 ```
 
 ### Dropping high-frequency variants
 
-[`filtered_drivers_per_cell`](@ref)`(root, threshold)` leaves out the drivers of every
+[`filtered_mutations_per_cell`](@ref)`(root, threshold)` leaves out the mutations of every
 ancestral node subtending more than `floor(threshold * N)` of the `N` leaves under
 `root` — the tree-side analogue of filtering high-frequency variants before estimating a
 mutation rate, since such nodes carry no information about within-clone divergence. It
@@ -56,10 +56,10 @@ site_frequency_spectrum(root[, N])   # length N, default the leaf count n
 branch_spectrum(root[, N])           # topological SFS
 ```
 
-`sfs[k]` is the number of **driver events** carried by exactly `k` leaves; `bs[k]` the
+`sfs[k]` is the number of **mutation events** carried by exactly `k` leaves; `bs[k]` the
 number of **internal nodes** subtending exactly `k` leaves. `N > n` pads with zeros —
 useful for sampled trees, where the meaningful length is the sample size — and `N < n` is
-an `ArgumentError`. Drivers on the root's own edge count as clonal, in `sfs[n]`.
+an `ArgumentError`. Mutations on the root's own edge count as clonal, in `sfs[n]`.
 
 ### Separating topology from the mutation rate
 
@@ -94,10 +94,10 @@ cell_lifetime(node, pop.t)            # one cell
 ```
 
 [`leaf_depths`](@ref) is the primary observable of a neutral run: it counts real
-divisions, unary nodes included, and gives passenger burdens as `Poisson(m * depth)`. Its
-default order is historical (right subtrees first) and co-indexed with nothing; it is
-kept fixed because stored results depend on it. Pass `order = :leaves` to pair depths
-with burdens or fitness.
+divisions, unary nodes included, and gives the burden of untracked neutral mutations as
+`Poisson(m * depth)`. Its default order is historical (right subtrees first) and
+co-indexed with nothing; it is kept fixed because stored results depend on it. Pass
+`order = :leaves` to pair depths with burdens or fitness.
 
 `cell_lifetimes` is the realised cell-cycle distribution and is **not** an unbiased
 sample of `birth_dist`. Competing risks remove cells that died first, and stopping at a
@@ -111,14 +111,14 @@ interdivision times would see, not a check of `birth_dist`.
 
 | Order | Functions |
 |:---|:---|
-| increasing id (`alive_cells(pop)`) | `drivers_per_cell(pop)`, `fitness_per_cell(pop)`, `pairwise_distances(pop, idx)` indices |
-| `Leaves(root)` (`alive_cells(root)`) | `drivers_per_cell(root)`, `leaf_fitness`, `filtered_drivers_per_cell`, `leaf_depths(root; order = :leaves)` |
+| increasing id (`alive_cells(pop)`) | `mutations_per_cell(pop)`, `fitness_per_cell(pop)`, `pairwise_distances(pop, idx)` indices |
+| `Leaves(root)` (`alive_cells(root)`) | `mutations_per_cell(root)`, `leaf_fitness`, `filtered_mutations_per_cell`, `leaf_depths(root; order = :leaves)` |
 | its own (pooled only) | `leaf_depths(root)` |
 
 ## Distances and coalescence
 
 ```julia
-pairwise_distance(node1, node2)        # drivers differing between two cells
+pairwise_distance(node1, node2)        # mutations differing between two cells
 pairwise_distances(pop[, idx])         # every pair, flat Vector{Int64}
 pairwise_distances(root[, idx])
 coalescence_times(pop[, idx]; t = pop.t)
@@ -148,7 +148,7 @@ s = sample_leaves(pop, 50; seed = 1)
 |:---|:---|
 | `single_root(pop)` | `nothing` |
 | `roots(pop)` | the distinct roots, one per tree |
-| `find_mrca(pop)`, `clonal_drivers(pop)` | `nothing`, `0` |
+| `find_mrca(pop)`, `clonal_mutations(pop)` | `nothing`, `0` |
 | `site_frequency_spectrum(pop)`, per-cell functions | correct — every tree contributes |
 | `sample_leaves`, `sample_trees` | throw, naming the number of roots |
 | `coalescence_times`, `pairwise_distance` across trees | a convention, see below |
@@ -184,7 +184,7 @@ right_child!(parent, data)
 
 | Function | Cost |
 |:---|:---|
-| `drivers_per_cell`, `fitness_per_cell`, `mean_drivers` | ``O(N)`` (population methods add an ``O(N \log N)`` sort) |
-| `site_frequency_spectrum`, `branch_spectrum`, `leaf_depths`, `filtered_drivers_per_cell`, `cell_lifetimes` | ``O(T)`` |
+| `mutations_per_cell`, `fitness_per_cell`, `mean_mutations` | ``O(N)`` (population methods add an ``O(N \log N)`` sort) |
+| `site_frequency_spectrum`, `branch_spectrum`, `leaf_depths`, `filtered_mutations_per_cell`, `cell_lifetimes` | ``O(T)`` |
 | `single_root(pop)`, `find_mrca(pop)` | ``O(T)`` |
 | `pairwise_distances`, `coalescence_times` | ``O(N^2 D)`` |

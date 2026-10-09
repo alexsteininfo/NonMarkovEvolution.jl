@@ -9,7 +9,7 @@ deliberately not part of [`NonMarkovBlock`](@ref) or [`MeasurementSpec`](@ref).
 using NonMarkovEvolution, Distributions, Random, Statistics
 block = NonMarkovBlock(
     birth_dist = f -> Gamma(5.0, 1 / (5 * f)), death_dist = f -> Exponential(4.0),
-    driver_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
+    effect_dist = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 0.5,
     stopfunction = pop -> popsize(pop) >= 2_000, restart_on_extinction = true)
 pop = simulate!(initialize_population(), block, MersenneTwister(5))
 
@@ -41,7 +41,7 @@ lists the leaves once for all its draws.
 The induced tree keeps the sampled leaves **plus every ancestor of a sampled leaf**, and
 keeps the resulting unary nodes. Every division ancestral to a sampled cell is still a
 node, so a sampled cell's root-to-leaf path is unchanged:
-[`drivers_per_cell`](@ref)`(s.root; includeclonal = true)` and [`leaf_depths`](@ref)
+[`mutations_per_cell`](@ref)`(s.root; includeclonal = true)` and [`leaf_depths`](@ref)
 return exactly that cell's **full-tree** burden and depth. Collapsing would turn depth
 into a count of bifurcations that happened to survive sampling — a property of the
 sample, not of the cell. It is also the shape [`prune_tree!`](@ref
@@ -49,19 +49,19 @@ NonMarkovEvolution.prune_tree!) leaves when a lineage dies out, so every statist
 applies to a sampled tree unchanged.
 
 ```@example sampling
-full   = Dict(c.data.id => c.data.total_drivers for c in alive_cells(pop))
+full   = Dict(c.data.id => c.data.total_mutations for c in alive_cells(pop))
 sample = Dict(zip([l.data.id for l in alive_cells(s.root)],
-                  drivers_per_cell(s.root; includeclonal = true)))
+                  mutations_per_cell(s.root; includeclonal = true)))
 all(sample[id] == full[id] for id in s.sampled_ids)
 ```
 
 !!! warning "The root of a sampled tree is the founder, not the MRCA of the sample"
     Ancestry is retained all the way up, so `site_frequency_spectrum(s.root, s.n)` puts
-    the founder's drivers in `sfs[n]` exactly as the full tree puts them in `sfs[N]`. For
+    the founder's mutations in `sfs[n]` exactly as the full tree puts them in `sfs[N]`. For
     the sample's own MRCA use `find_mrca(alive_cells(s.root))`.
 
 The sampled tree shares `data` with the source: `NonMarkovCell` is immutable, so ids,
-times, driver counts and fitness are identical by construction. Changing a node of the
+times, mutation counts and fitness are identical by construction. Changing a node of the
 sampled tree (for example with [`set_fitness!`](@ref)) rebinds only that tree.
 
 ## Declaring what to produce
@@ -119,7 +119,7 @@ using NonMarkovEvolution, Distributions, Random, Serialization
 
 block(s) = NonMarkovBlock(
     birth_dist = f -> Gamma(5.0, 1 / (5 * f)), death_dist = f -> Exponential(1 / 0.3),
-    driver_dist = Dirac(s), fitness_update = (f, δ) -> f + δ, ν = 0.2,
+    effect_dist = Dirac(s), fitness_update = (f, δ) -> f + δ, ν = 0.2,
     stopfunction = pop -> popsize(pop) >= 100_000, restart_on_extinction = true)
 
 for (i, s) in enumerate(0.0:0.1:0.5)

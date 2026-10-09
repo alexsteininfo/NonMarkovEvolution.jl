@@ -2,58 +2,58 @@
 # entry per living cell in increasing id order (`alive_cells(pop)`); root methods in
 # `Leaves(root)` order (`alive_cells(root)`), except `leaf_depths` by default.
 
-# ── Driver burden and fitness ─────────────────────────────────────────────────
+# ── Mutation burden and fitness ───────────────────────────────────────────────
 
 """
-    drivers_per_cell(population) -> Vector{Int64}
-    drivers_per_cell(root::BinaryNode; includeclonal = false) -> Vector{Int64}
+    mutations_per_cell(population) -> Vector{Int64}
+    mutations_per_cell(root::BinaryNode; includeclonal = false) -> Vector{Int64}
 
-Driver burden of every living cell: for a population, each cell's full burden in
+Mutation burden of every living cell: for a population, each cell's full burden in
 `alive_cells(population)` order; for a tree, in `Leaves(root)` order, where
 
-- `includeclonal = false` (default) counts only drivers acquired strictly *below*
-  `root`. Drivers on `root` itself and on its ancestors are carried by every leaf of the
+- `includeclonal = false` (default) counts only mutations acquired strictly *below*
+  `root`. Mutations on `root` itself and on its ancestors are carried by every leaf of the
   subtree, so they are clonal there and left out.
 - `includeclonal = true` gives each leaf's full burden, back to the top of its tree.
 
-For the founder of a simulated tree the two agree, because it carries no drivers.
+For the founder of a simulated tree the two agree, because it carries no mutations.
 """
-drivers_per_cell(population::Population) =
-    Int64[node.data.total_drivers for node in alive_cells(population)]
+mutations_per_cell(population::Population) =
+    Int64[node.data.total_mutations for node in alive_cells(population)]
 
-function drivers_per_cell(root::BinaryNode{NonMarkovCell}; includeclonal::Bool = false)
-    offset = includeclonal ? 0 : root.data.total_drivers
-    return Int64[leaf.data.total_drivers - offset for leaf in _leaves(root)]
+function mutations_per_cell(root::BinaryNode{NonMarkovCell}; includeclonal::Bool = false)
+    offset = includeclonal ? 0 : root.data.total_mutations
+    return Int64[leaf.data.total_mutations - offset for leaf in _leaves(root)]
 end
 
 """
-    clonal_drivers(population) -> Int64
+    clonal_mutations(population) -> Int64
 
-Number of drivers carried by every living cell (the MRCA's burden), or `0` if the cells
+Number of mutations carried by every living cell (the MRCA's burden), or `0` if the cells
 have no common ancestor.
 """
-function clonal_drivers(population::Population)
+function clonal_mutations(population::Population)
     mrca = find_mrca(population)
-    return isnothing(mrca) ? 0 : mrca.data.total_drivers
+    return isnothing(mrca) ? 0 : mrca.data.total_mutations
 end
 
 """
-    mean_drivers(population) -> Float64
+    mean_mutations(population) -> Float64
 
-Mean driver burden across living cells.
+Mean mutation burden across living cells.
 """
-mean_drivers(population::Population) = mean(_burdens(population))
+mean_mutations(population::Population) = mean(_burdens(population))
 
 """
-    var_drivers(population) -> Float64
+    var_mutations(population) -> Float64
 
-Variance of the driver burden across living cells.
+Variance of the mutation burden across living cells.
 """
-var_drivers(population::Population) = var(_burdens(population))
+var_mutations(population::Population) = var(_burdens(population))
 
 # Burdens and fitnesses in `Dict` order, for summaries where order does not matter.
 _burdens(population::Population) =
-    Float64[node.data.total_drivers for node in values(population.cells)]
+    Float64[node.data.total_mutations for node in values(population.cells)]
 _fitnesses(population::Population) =
     Float64[node.data.fitness for node in values(population.cells)]
 
@@ -69,22 +69,22 @@ fitness_per_cell(population::Population) =
     leaf_fitness(root::BinaryNode) -> Vector{Float64}
 
 Fitness of every leaf under `root`, in `Leaves(root)` order — co-indexed with
-[`drivers_per_cell`](@ref)`(root)`.
+[`mutations_per_cell`](@ref)`(root)`.
 """
 leaf_fitness(root::BinaryNode) = Float64[leaf.data.fitness for leaf in _leaves(root)]
 
 """
-    filtered_drivers_per_cell(root::BinaryNode, threshold::Real) -> Vector{Int}
+    filtered_mutations_per_cell(root::BinaryNode, threshold::Real) -> Vector{Int}
 
-Per-leaf driver burden, counted from the leaf up to and including `root`, leaving out
-the drivers of any ancestral node whose leaf count exceeds `floor(threshold * N)`, where
-`N` is the number of leaves under `root`. A leaf's own drivers always count.
+Per-leaf mutation burden, counted from the leaf up to and including `root`, leaving out
+the mutations of any ancestral node whose leaf count exceeds `floor(threshold * N)`, where
+`N` is the number of leaves under `root`. A leaf's own mutations always count.
 
 This is the tree-side analogue of dropping high-frequency variants before estimating a
 mutation rate. `threshold = 1.0` leaves nothing out, and on the top of a tree equals
-`drivers_per_cell(root; includeclonal = true)`. Returned in `Leaves(root)` order.
+`mutations_per_cell(root; includeclonal = true)`. Returned in `Leaves(root)` order.
 """
-function filtered_drivers_per_cell(root::BinaryNode{NonMarkovCell}, threshold::Real)
+function filtered_mutations_per_cell(root::BinaryNode{NonMarkovCell}, threshold::Real)
     nodes, parent = _preorder(root)
     counts    = _leafcounts(nodes, parent)
     max_count = floor(Int, threshold * counts[1])
@@ -96,9 +96,9 @@ function filtered_drivers_per_cell(root::BinaryNode{NonMarkovCell}, threshold::R
         node    = nodes[i]
         inherit = parent[i] == 0 ? 0 : above[parent[i]]
         if isleaf(node)
-            push!(result, inherit + node.data.drivers)
+            push!(result, inherit + node.data.mutations)
         else
-            above[i] = inherit + (counts[i] <= max_count ? node.data.drivers : 0)
+            above[i] = inherit + (counts[i] <= max_count ? node.data.mutations : 0)
         end
     end
     return result
@@ -122,14 +122,14 @@ end
 """
     pairwise_distance(node1, node2) -> Int64
 
-Number of drivers that differ between two cells: those on the path from each cell up to
+Number of mutations that differ between two cells: those on the path from each cell up to
 their MRCA, excluding the MRCA itself. Cells in different trees share nothing, so their
 distance is the sum of both burdens.
 """
 function pairwise_distance(node1::BinaryNode{NonMarkovCell}, node2::BinaryNode{NonMarkovCell})
     mrca   = find_mrca(node1, node2)
-    shared = isnothing(mrca) ? 0 : mrca.data.total_drivers
-    return node1.data.total_drivers + node2.data.total_drivers - 2shared
+    shared = isnothing(mrca) ? 0 : mrca.data.total_mutations
+    return node1.data.total_mutations + node2.data.total_mutations - 2shared
 end
 
 """
@@ -195,23 +195,23 @@ end
     site_frequency_spectrum(population) -> Vector{Int64}
     site_frequency_spectrum(root::BinaryNode[, N]) -> Vector{Int64}
 
-Driver site-frequency spectrum: `sfs[k]` is the number of driver events carried by
+Mutation site-frequency spectrum: `sfs[k]` is the number of mutation events carried by
 exactly `k` living cells. For a population it has length `popsize(population)` and every
 tree of a forest contributes. For a tree it has length `N`, by default the number `n` of
 leaves; `N > n` pads with zeros (useful for sampled trees, where the meaningful length
-is the sample size), `N < n` is an error. Drivers on the root's own edge count as
+is the sample size), `N < n` is an error. Mutations on the root's own edge count as
 clonal, in `sfs[n]`.
 """
 function site_frequency_spectrum(population::Population)
     sfs = zeros(Int64, popsize(population))
     for root in _population_roots(population)
-        _fill_spectrum!(sfs, root, node -> node.data.drivers, "site_frequency_spectrum")
+        _fill_spectrum!(sfs, root, node -> node.data.mutations, "site_frequency_spectrum")
     end
     return sfs
 end
 
 site_frequency_spectrum(root::BinaryNode, N::Int = popsize(root)) =
-    _fill_spectrum!(zeros(Int64, N), root, node -> node.data.drivers,
+    _fill_spectrum!(zeros(Int64, N), root, node -> node.data.mutations,
                     "site_frequency_spectrum")
 
 """
@@ -236,13 +236,14 @@ branch_spectrum(root::BinaryNode, N::Int = popsize(root)) =
     leaf_depths(root::BinaryNode; order = :stack) -> Vector{Int}
 
 Number of divisions on the path from `root` to each leaf. For neutral simulations this
-is the primary quantity: a leaf's passenger burden at rate `m` is `Poisson(m * depth)`.
+is the primary quantity: a leaf's burden of untracked neutral mutations at rate `m` is
+`Poisson(m * depth)`.
 
 - `order = :stack` (default) — the historical order (right subtrees first), which is
   *not* co-indexed with anything. Kept as the default because stored results depend on
   it; valid as a pooled distribution.
 - `order = :leaves` — `Leaves(root)` order, co-indexed with
-  [`drivers_per_cell`](@ref)`(root)` and [`leaf_fitness`](@ref).
+  [`mutations_per_cell`](@ref)`(root)` and [`leaf_fitness`](@ref).
 """
 function leaf_depths(root::BinaryNode{T}; order::Symbol = :stack) where T
     order in (:stack, :leaves) || throw(ArgumentError(

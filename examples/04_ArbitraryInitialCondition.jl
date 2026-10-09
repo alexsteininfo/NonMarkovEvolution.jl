@@ -4,12 +4,12 @@
 ## Two scenarios grow to the same final size (N = 1 000) under the same block but start
 ## from different numbers of founders:
 ##
-##   A: 1 founding cell    — a single tree; drivers acquired early are shared widely.
+##   A: 1 founding cell    — a single tree; mutations acquired early are shared widely.
 ##   B: 100 founding cells — a forest of 100 independent trees of ~10 cells each.
 ##
-## In B each founder's tree is shallow, so cells carry fewer drivers, almost every driver
-## is carried by few cells, and nothing is shared by all cells. Distances are computed on
-## a reproducible random sample of 30 cells.
+## In B each founder's tree is shallow, so cells carry fewer mutations, almost every
+## mutation is carried by few cells, and nothing is shared by all cells. Distances are
+## computed on a reproducible random sample of 30 cells.
 ##
 ## Inputs : none.  Outputs: summary statistics printed to stdout.
 ## Run    : julia --project=. examples/04_ArbitraryInitialCondition.jl
@@ -27,7 +27,7 @@ block = NonMarkovBlock(
     birth_dist     = f -> Gamma(k, 1.0 / (k * f)),     # mean division time 1/f
     death_dist     = f -> Exponential(20.0),
     stopfunction   = pop -> popsize(pop) >= N_final,
-    driver_dist    = Exponential(0.05),
+    effect_dist    = Exponential(0.05),
     fitness_update = (f, δ) -> f + δ,
     ν              = 0.5,
     restart_on_extinction = true,
@@ -39,8 +39,8 @@ function summarise(label, pop, rng)
     println("=== $label ===")
     println("Simulation time    : ", round(pop.t, digits = 2))
     println("Mean fitness       : ", round(mean(fitness_per_cell(pop)), digits = 4))
-    println("Mean drivers/cell  : ", round(mean(drivers_per_cell(pop)), digits = 2))
-    println("Clonal drivers     : ", clonal_drivers(pop), "  (shared by all cells)")
+    println("Mean mutations/cell: ", round(mean(mutations_per_cell(pop)), digits = 2))
+    println("Clonal mutations   : ", clonal_mutations(pop), "  (shared by all cells)")
     println("Singleton fraction : ", round(100 * sfs[1] / sum(sfs), digits = 1), "%")
     println("Mean pairwise dist : ", round(mean(pairwise_distances(pop, idx)), digits = 2),
             "  (30 random cells)")

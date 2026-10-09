@@ -172,21 +172,21 @@ A single cell of the simulation, stored as the `data` of a `BinaryNode`. Immutab
 # Fields
 - `id::Int64` — unique cell identifier; always larger than the parent's id
 - `birthtime::Float64` — simulation time at which the cell was born
-- `drivers::Int64` — driver mutations acquired at this cell's own birth
-- `total_drivers::Int64` — drivers on the whole path from the root to this cell,
-  including its own: the parent's `total_drivers + drivers`
-- `fitness::Float64` — cumulative fitness (parent fitness updated once per driver)
+- `mutations::Int64` — mutations acquired at this cell's own birth
+- `total_mutations::Int64` — mutations on the whole path from the root to this cell,
+  including its own: the parent's `total_mutations + mutations`
+- `fitness::Float64` — cumulative fitness (parent fitness updated once per mutation)
 
-`total_drivers` is stored so that a cell's burden is a field read, not a walk to the
-root. A hand-built tree must keep it consistent: a root has `total_drivers == drivers`,
-and every child adds its own `drivers` to its parent's total. To change a cell's
+`total_mutations` is stored so that a cell's burden is a field read, not a walk to the
+root. A hand-built tree must keep it consistent: a root has `total_mutations == mutations`,
+and every child adds its own `mutations` to its parent's total. To change a cell's
 fitness from a hook, use [`set_fitness!`](@ref).
 """
 struct NonMarkovCell
     id::Int64
     birthtime::Float64
-    drivers::Int64
-    total_drivers::Int64
+    mutations::Int64
+    total_mutations::Int64
     fitness::Float64
 end
 
@@ -195,11 +195,11 @@ end
 
 Replace `node`'s cell with an identical one of the given fitness. This is the supported
 way for an `on_division` hook to change a daughter: it keeps `id`, `birthtime` and both
-driver counts intact. The new fitness is inherited by all later descendants.
+mutation counts intact. The new fitness is inherited by all later descendants.
 """
 function set_fitness!(node::BinaryNode{NonMarkovCell}, fitness::Real)
     c = node.data
-    node.data = NonMarkovCell(c.id, c.birthtime, c.drivers, c.total_drivers, fitness)
+    node.data = NonMarkovCell(c.id, c.birthtime, c.mutations, c.total_mutations, fitness)
     return node
 end
 

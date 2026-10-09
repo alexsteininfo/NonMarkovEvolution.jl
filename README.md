@@ -1,14 +1,14 @@
 # NonMarkovEvolution.jl
 
 Stochastic, **non-Markovian** birth–death evolution of cell populations with
-fitness-changing mutations: realistic cell-cycle timing, per-cell fitness, and the
+mutations that may change fitness: realistic cell-cycle timing, per-cell fitness, and the
 complete lineage tree of the survivors. Built for somatic evolution (copy-number or SNV
-drivers), but not restricted to it.
+mutations), but not restricted to it.
 
 Division and death waiting times are drawn from arbitrary distributions that may depend
 on the cell's own fitness, so the cell cycle can have a realistic refractory period that
-a memoryless model cannot express. Each driver mutation draws its own fitness effect, so
-every cell carries an individual fitness rather than a shared subclone label.
+a memoryless model cannot express. Each mutation draws its own fitness effect (possibly
+zero), so every cell carries an individual fitness rather than a shared subclone label.
 
 This is a **simulator**: it does not infer trees, fit parameters, or compare populations.
 
@@ -31,9 +31,9 @@ pop = initialize_population(fitness_init = 1.0)
 block = NonMarkovBlock(
     birth_dist     = f -> Gamma(5.0, 1 / (5 * f)),   # mean division time 1/f, CV 1/√5
     death_dist     = f -> Exponential(1 / 0.3),       # death rate 0.3
-    driver_dist    = Exponential(0.05),               # effect size of one driver
+    effect_dist    = Exponential(0.05),               # effect size of one mutation
     fitness_update = (f, δ) -> f + δ,                 # additive selection
-    ν              = 0.2,                             # mean drivers per daughter
+    ν              = 0.2,                             # mean mutations per daughter
     stopfunction   = pop -> popsize(pop) >= 10_000,
     restart_on_extinction = true,
 )
@@ -44,7 +44,7 @@ simulate!(pop, block, MersenneTwister(42); accumulator = acc)
 m = finalize_measurements(acc)                  # trajectory + end snapshot
 
 root = single_root(pop)
-drivers_per_cell(root)        # driver burden of every living cell
+mutations_per_cell(root)        # mutation burden of every living cell
 leaf_depths(root)             # divisions from founder to each living cell
 branch_spectrum(root)         # topology, separated from the mutation rate
 
@@ -54,7 +54,7 @@ site_frequency_spectrum(out.samples[1].root)
 ```
 
 Runnable examples are in [`examples/`](examples): single-cell expansion, growth with
-drivers, chained two-phase runs, and an arbitrary initial condition.
+mutations, chained two-phase runs, and an arbitrary initial condition.
 
 ## What it models
 
@@ -67,13 +67,14 @@ drivers, chained two-phase runs, and an arbitrary initial condition.
 - **Any waiting-time law** — deterministic, exponential, Gamma, Weibull, log-normal, or
   your own — and it matters: at a fixed mean cycle the growth rate falls from `b` at
   Gamma shape `k = 1` to `b·ln 2` as `k → ∞`.
-- **Selection in two lines** — pick `driver_dist` and `fitness_update`: neutral,
+- **Selection in two lines** — pick `effect_dist` and `fitness_update`: neutral,
   additive, multiplicative, winner-takes-all, capped, or deleterious load.
 - **The tree is the output.** Dead cells are pruned, leaving the reduced tree of the
   survivors, from which spectra, burdens, depths, distances and coalescence times are
   computed — on the whole population or on a reproducible uniform sample.
 
-Neutral passengers, spatial structure and clone-level bookkeeping are out of scope.
+Untracked neutral mutations, spatial structure and clone-level bookkeeping are out of
+scope.
 Related: [`CopyNumberPainter.jl`](https://github.com/alexsteininfo/CopyNumberPainter.jl)
 (copy number along these trees),
 [`BirthDeathMutation`](https://github.com/alexsteininfo/BirthDeathMutation) (the low-`ν`

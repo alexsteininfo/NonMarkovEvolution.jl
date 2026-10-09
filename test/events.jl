@@ -15,7 +15,7 @@ end
         birth_dist     = f -> Gamma(2.0, 1.0 / f),
         death_dist     = f -> Gamma(2.0, 5.0),
         stopfunction   = pop -> false,
-        driver_dist    = Exponential(0.1),
+        effect_dist    = Exponential(0.1),
         fitness_update = (f, δ) -> f + δ,
         ν              = 0.0,
     )
@@ -37,7 +37,7 @@ end
         birth_dist     = f -> Exponential(1.0 / f),  # mean division time ≈ 1
         death_dist     = f -> Exponential(100.0),    # mean death time = 100 → rare
         stopfunction   = pop -> false,
-        driver_dist    = Exponential(0.1),
+        effect_dist    = Exponential(0.1),
         fitness_update = (f, δ) -> f + δ,
         ν              = 0.0,
     )

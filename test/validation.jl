@@ -7,7 +7,7 @@
     block = NonMarkovBlock(
         birth_dist = f -> Exponential(1 / b), death_dist = f -> Exponential(1 / d),
         stopfunction = pop -> popsize(pop) >= 40,    # extinction from 40 cells ≈ 0.5^40
-        driver_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0)
+        effect_dist = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0)
     rng = MersenneTwister(2026)
     extinct = count(1:runs) do _
         pop = initialize_population()
@@ -24,7 +24,7 @@ end
     p = (7 / 6)^(-3)
     block = NonMarkovBlock(
         birth_dist = f -> Gamma(3.0, 1 / 3), death_dist = f -> Exponential(2.0),
-        stopfunction = pop -> popsize(pop) >= 40, driver_dist = Dirac(0.0),
+        stopfunction = pop -> popsize(pop) >= 40, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = 0.0)
     rng, runs = MersenneTwister(7), 2000
     extinct = count(1:runs) do _
@@ -43,7 +43,7 @@ end
         r_theory = k * b * (2^(1 / k) - 1)
         block = NonMarkovBlock(
             birth_dist = f -> Gamma(k, 1 / (k * b * f)), death_dist = f -> Dirac(Inf),
-            stopfunction = pop -> popsize(pop) >= 20_000, driver_dist = Dirac(0.0),
+            stopfunction = pop -> popsize(pop) >= 20_000, effect_dist = Dirac(0.0),
             fitness_update = (f, δ) -> f, ν = 0.0)
         estimates = map(1:4) do seed
             acc = MeasurementAccumulator(MeasurementSpec(
@@ -58,17 +58,17 @@ end
     end
 end
 
-@testset "every daughter draws Poisson(ν) drivers" begin
+@testset "every daughter draws Poisson(ν) mutations" begin
     # Pure birth keeps every daughter in the tree, so the non-root nodes are an unbiased
     # sample of per-daughter draws: mean and variance should both be ν.
     pop = initialize_population()
     ν   = 0.7
     simulate!(pop, NonMarkovBlock(
         birth_dist = f -> Gamma(5.0, 0.2), death_dist = f -> Dirac(Inf),
-        stopfunction = p -> popsize(p) >= 5_000, driver_dist = Dirac(0.0),
+        stopfunction = p -> popsize(p) >= 5_000, effect_dist = Dirac(0.0),
         fitness_update = (f, δ) -> f, ν = ν), MersenneTwister(5))
     root = single_root(pop)
-    js   = [Float64(n.data.drivers) for n in PreOrderDFS(root) if n !== root]
+    js   = [Float64(n.data.mutations) for n in PreOrderDFS(root) if n !== root]
     @test length(js) == 2 * (5_000 - 1)
     @test abs(mean(js) / ν - 1) < 0.05
     @test abs(var(js) / ν - 1) < 0.08

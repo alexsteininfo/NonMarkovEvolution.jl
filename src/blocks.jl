@@ -1,5 +1,5 @@
 """
-    NonMarkovBlock(; birth_dist, death_dist, driver_dist, fitness_update, ν,
+    NonMarkovBlock(; birth_dist, death_dist, effect_dist, fitness_update, ν,
                      stopfunction = pop -> false, tmax = Inf,
                      restart_on_extinction = false, on_division = nothing,
                      on_restart = nothing)
@@ -8,9 +8,9 @@ Everything the cells do during one [`simulate!`](@ref) call.
 
 - `birth_dist`, `death_dist` — `f -> Distribution`: waiting time from a cell's birth to
   its division, or to its death, given its fitness `f`. The earlier one happens.
-- `driver_dist` — distribution of one driver's effect size `δ`.
-- `fitness_update` — `(f, δ) -> f′`, applied once per driver.
-- `ν` — mean drivers per daughter per division (Poisson), `ν ≥ 0`.
+- `effect_dist` — distribution of one mutation's effect size `δ`.
+- `fitness_update` — `(f, δ) -> f′`, applied once per mutation.
+- `ν` — mean mutations per daughter per division (Poisson), `ν ≥ 0`.
 - `stopfunction` — `pop -> Bool`, tested before every event; the block stops when it
   returns `true`.
 - `tmax` — the block also stops at exactly `pop.t = tmax`, without firing any later event.
@@ -29,7 +29,7 @@ struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
     birth_dist::F1
     death_dist::F2
     stopfunction::F3
-    driver_dist::D
+    effect_dist::D
     fitness_update::F4
     ν::Float64
     tmax::Float64
@@ -38,14 +38,14 @@ struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
     on_restart::F6
 
     function NonMarkovBlock(birth_dist::F1, death_dist::F2, stopfunction::F3,
-                            driver_dist::D, fitness_update::F4, ν::Real, tmax::Real,
+                            effect_dist::D, fitness_update::F4, ν::Real, tmax::Real,
                             restart_on_extinction::Bool, on_division::F5,
                             on_restart::F6) where {F1, F2, F3, F4, F5, F6, D}
         ν >= 0 || throw(ArgumentError("NonMarkovBlock: ν must be >= 0, got $ν"))
         isnan(tmax) && throw(ArgumentError("NonMarkovBlock: tmax must not be NaN"))
-        driver_dist isa Sampleable{Univariate} || throw(ArgumentError(
-            "NonMarkovBlock: driver_dist must be a univariate distribution, got " *
-            "$(typeof(driver_dist))"))
+        effect_dist isa Sampleable{Univariate} || throw(ArgumentError(
+            "NonMarkovBlock: effect_dist must be a univariate distribution, got " *
+            "$(typeof(effect_dist))"))
         for (name, dist) in (("birth_dist", birth_dist), ("death_dist", death_dist))
             d = dist(1.0)
             d isa Sampleable{Univariate} || throw(ArgumentError(
@@ -53,16 +53,16 @@ struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
                 "$name(1.0) returned a $(typeof(d))"))
         end
         return new{F1, F2, F3, F4, F5, F6, D}(birth_dist, death_dist, stopfunction,
-            driver_dist, fitness_update, ν, tmax, restart_on_extinction, on_division,
+            effect_dist, fitness_update, ν, tmax, restart_on_extinction, on_division,
             on_restart)
     end
 end
 
-function NonMarkovBlock(; birth_dist, death_dist, driver_dist, fitness_update, ν,
+function NonMarkovBlock(; birth_dist, death_dist, effect_dist, fitness_update, ν,
                         stopfunction = Returns(false), tmax::Real = Inf,
                         restart_on_extinction::Bool = false, on_division = nothing,
                         on_restart = nothing)
-    return NonMarkovBlock(birth_dist, death_dist, stopfunction, driver_dist,
+    return NonMarkovBlock(birth_dist, death_dist, stopfunction, effect_dist,
                           fitness_update, ν, tmax, restart_on_extinction, on_division,
                           on_restart)
 end

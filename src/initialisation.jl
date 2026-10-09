@@ -2,7 +2,7 @@
     initialize_population(; fitness_init=1.0, time=0.0) -> Population
 
 Create a population containing a single founding cell with the given initial fitness.
-The cell acquires no driver mutations at birth (it is the root of the lineage tree).
+The cell acquires no mutations at birth (it is the root of the lineage tree).
 
 ```julia
 pop = initialize_population(fitness_init = 1.0)

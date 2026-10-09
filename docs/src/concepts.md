@@ -9,18 +9,18 @@ The unit of state is a [`NonMarkovCell`](@ref), carried as the `data` of a
 |:---|:---|
 | `id::Int64` | unique identifier, allocated in order of creation, so larger than its parent's |
 | `birthtime::Float64` | absolute simulation time at which the cell was born |
-| `drivers::Int64` | driver mutations acquired **at this cell's own birth** |
-| `total_drivers::Int64` | drivers on the whole path from the root, including its own |
-| `fitness::Float64` | the parent's fitness, updated once per new driver |
+| `mutations::Int64` | mutations acquired **at this cell's own birth** |
+| `total_mutations::Int64` | mutations on the whole path from the root, including its own |
+| `fitness::Float64` | the parent's fitness, updated once per new mutation |
 
-`drivers` is **local**: a driver event sitting on one node is carried by exactly the
+`mutations` is **local**: a mutation event sitting on one node is carried by exactly the
 leaves below it, which is what makes a site-frequency spectrum a single traversal.
-`total_drivers` is the cell's burden, stored so that burdens and distances are field
+`total_mutations` is the cell's burden, stored so that burdens and distances are field
 reads rather than walks to the root. `fitness` is **cumulative** for the same reason: it
 is what the waiting-time distributions need, twice per division.
 
 Cells are replaced, never mutated. An `on_division` hook changes a daughter with
-[`set_fitness!`](@ref); a hand-built tree must keep `total_drivers` consistent (a root's
+[`set_fitness!`](@ref); a hand-built tree must keep `total_mutations` consistent (a root's
 total is its own count, a child adds its own count to its parent's).
 
 ## The tree records the survivors
@@ -70,7 +70,7 @@ T_\text{div} \sim \texttt{birth\_dist}(f), \qquad T_\text{die} \sim \texttt{deat
 
 This is exact for *any* pair of distributions — no acceptance–rejection, no rate bound,
 no time discretisation — because nothing can change a cell's fitness between its birth
-and its event: drivers arise only at division, in the daughters. The flip side is that a
+and its event: mutations arise only at division, in the daughters. The flip side is that a
 cell's fate never reacts to anything *external* after its birth (population size, a
 treatment); see
 [Density-dependent and homeostatic growth](blocks.md#Density-dependent-and-homeostatic-growth).
@@ -83,7 +83,7 @@ event per living cell. The loop is:
 1. Stop if `stopfunction(pop)` holds, the next event lies beyond `tmax`, or the heap is
    empty.
 2. Pop the earliest event, ``O(\log N)``, and advance `pop.t` to its time.
-3. **Division**: replace the parent by two daughters (drawing their drivers and
+3. **Division**: replace the parent by two daughters (drawing their mutations and
    fitness), call `on_division`, then schedule both daughters.
    **Death**: prune the cell from the tree and the population.
 
@@ -136,7 +136,7 @@ Base.rand(rng::AbstractRNG, d::ExpModGamma) =
 
 block = NonMarkovBlock(
     birth_dist = f -> ExpModGamma(4.0, 0.15 / f, 0.4 / f),   # mean (0.6 + 0.4)/f = 1/f
-    death_dist = f -> Dirac(Inf), driver_dist = Dirac(0.0),
+    death_dist = f -> Dirac(Inf), effect_dist = Dirac(0.0),
     fitness_update = (f, δ) -> f, ν = 0.0, stopfunction = p -> popsize(p) >= 500)
 pop = simulate!(initialize_population(), block, MersenneTwister(1))
 round(mean(cell_lifetimes(single_root(pop))), digits = 2)
@@ -181,7 +181,7 @@ kept as separate observables: under Gamma timing they carry different informatio
 from `(initial population, block, seed)`, and a chained run is identical draw for draw to
 the equivalent uninterrupted one (asserted by the tests).
 
-Per division the order is: daughter 1's driver count and effect sizes, daughter 2's,
+Per division the order is: daughter 1's mutation count and effect sizes, daughter 2's,
 then `on_division` if it draws, then daughter 1's two waiting times and daughter 2's.
 Anything that changes how many values a step consumes shifts everything after it:
 

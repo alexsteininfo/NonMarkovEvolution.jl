@@ -28,7 +28,7 @@ function simulate!(
     accumulator::Union{MeasurementAccumulator, Nothing} = nothing,
 )
     snapshot = block.restart_on_extinction ? _RestartPoint(population) : nothing
-    drivers  = Poisson(block.ν)
+    mutation_count = Poisson(block.ν)
 
     if !isnothing(accumulator)
         _start_call!(accumulator, population)
@@ -71,7 +71,7 @@ function simulate!(
 
             if event.is_division
                 d1, d2 = celldivision!(population, event.node, event.time, block,
-                                       drivers, rng)
+                                       mutation_count, rng)
                 # Must run before scheduling: schedule_cell! reads the fitness at push
                 # time, so a boosted daughter's own first division uses the new fitness.
                 isnothing(block.on_division) ||
