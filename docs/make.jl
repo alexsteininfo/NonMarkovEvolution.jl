@@ -16,6 +16,7 @@ makedocs(
         "Output" => "output.md",
         "Tree statistics" => "statistics.md",
         "Sampling" => "sampling.md",
+        "Performance" => "performance.md",
         "Limitations and open questions" => "limitations.md",
         "API reference" => "api.md",
     ],
