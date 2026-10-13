@@ -87,6 +87,7 @@ function _thinning_loop!(pop::Population, alive::_AliveRates, block::NonMarkovBl
         elseif u < rb[k] + rd[k]
             isnothing(acc) || _record_until!(acc, pop, t)
             pop.t = t
+            isnothing(block.on_death) || block.on_death(pop, CellNode(tree, nodes[k]))
             _die!(pop, nodes[k])
             nodes[k], rb[k], rd[k] = nodes[N], rb[N], rd[N]
             pop!(nodes); pop!(rb); pop!(rd)

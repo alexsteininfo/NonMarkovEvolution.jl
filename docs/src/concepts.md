@@ -109,7 +109,7 @@ longer fits in cache. The loop is:
 3. **Division**: append two daughters (drawing their mutations and fitness), call
    `on_division`, then draw both daughters' events. The first replaces the parent's
    event at the top of the heap; the second is pushed.
-   **Death**: remove the event, and prune the cell from the tree.
+   **Death**: remove the event, call `on_death`, and prune the cell from the tree.
 
 Growing from one cell to ``N`` costs ``O(N \log N)``. Events at exactly the same time
 (deterministic waiting times) fire in order of cell id.

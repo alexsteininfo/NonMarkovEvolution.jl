@@ -63,19 +63,55 @@ rate lies below the fastest cell's.
 
 ## Results
 
-Version 0.5 on the Hyperion cluster: **to be filled in from the next run of
-`benchmark/run_benchmarks.sh`.**
+Measured on the Hyperion cluster (node `iribhm-himm01`: 2 × 28-core AMD EPYC Rome, 1.5 TB
+RAM, shared and unscheduled; load average about 40) with Julia 1.12.7, on 9 October 2026,
+single samples.
 
 | mode | ``N`` | time | GC share | live memory | ns per cell |
 |:---|:---|---:|---:|---:|---:|
-| `gamma` | 10⁶ | — | — | — | — |
-| `gamma` | 10⁷ | — | — | — | — |
-| `gamma+sizehint` | 10⁶ | — | — | — | — |
-| `gamma+sizehint` | 10⁷ | — | — | — | — |
-| `exp/thinning` | 10⁶ | — | — | — | — |
-| `exp/thinning` | 10⁷ | — | — | — | — |
-| `exp/queue` | 10⁶ | — | — | — | — |
-| `exp/queue` | 10⁷ | — | — | — | — |
+| `gamma` | 10⁵ | 0.06 s | 3% | ≈ 10 MB | 552 |
+| `gamma` | 10⁶ | 1.17 s | 31% | ≈ 0.12 GB | 1 173 |
+| `gamma` | 10⁷ | 14.5 s | 10% | ≈ 1.4 GB | 1 447 |
+| `gamma+sizehint` | 10⁵ | 0.05 s | 1% | ≈ 10 MB | 456 |
+| `gamma+sizehint` | 10⁶ | 0.94 s | 18% | ≈ 0.14 GB | 944 |
+| `gamma+sizehint` | 10⁷ | 12.5 s | 1% | ≈ 1.3 GB | 1 248 |
+| `exp/thinning` | 10⁵ | 0.03 s | 2% | ≈ 10 MB | 327 |
+| `exp/thinning` | 10⁶ | 1.16 s | 29% | ≈ 0.10 GB | 1 162 |
+| `exp/thinning` | 10⁷ | 12.2 s | 10% | ≈ 1.2 GB | 1 224 |
+| `exp/queue` | 10⁵ | 0.04 s | 1% | ≈ 10 MB | 431 |
+| `exp/queue` | 10⁶ | 1.04 s | 32% | ≈ 0.12 GB | 1 044 |
+| `exp/queue` | 10⁷ | 13.0 s | 9% | ≈ 1.4 GB | 1 303 |
+
+- **Against 0.4** (table below), growth is 1.9× faster at 10⁶ and 2.8× faster at 10⁷,
+  with 40–45% less memory. The cost per cell now rises only mildly with ``N`` (1.2 µs at
+  10⁶, 1.4 µs at 10⁷, against 2.3 and 4.0 µs in 0.4).
+- **`sizehint!`** saves 15–20%: it removes the full collections that array growth
+  triggers, whose cost on this node is fixed per collection.
+- **`:thinning` is fastest for small populations** (327 against 431 ns per cell at 10⁵)
+  but only on a par with the queue from 10⁶ on. In this model the fitness spread grows
+  during the run, so the rate bound rises and more ticks are discarded, and each tick
+  reads a randomly chosen row of a large tree.
+
+Post-hoc statistics on one population of ``N = 10^6``:
+
+| function | 0.4 | 0.5 |
+|:---|---:|---:|
+| [`mutations_per_cell`](@ref) | 0.11 s | 0.011 s |
+| [`site_frequency_spectrum`](@ref) (population) | 0.53 s | 0.018 s |
+| [`branch_spectrum`](@ref) (root) | 0.52 s | 0.38 s |
+| [`leaf_depths`](@ref) | 0.32 s | 0.12 s |
+| [`sample_leaves`](@ref) (``n = 1000``) | 0.31 s | 0.10 s |
+
+The population-wide burden and spectrum are single sequential passes over the tree;
+the root methods still list the subtree first, which is why `branch_spectrum` gained
+least.
+
+**Parallel throughput** (`julia -t 16 … --parallel 100000`): 64 runs to 10⁵ cells take
+4.88 s one after the other and 1.62 s on 16 threads, 13.1 against 39.4 runs per second, a
+3.0× speed-up (19% efficiency). A single run is faster than in 0.4, but threads still
+scale poorly; the likely limits are memory bandwidth on a loaded node and the full
+collections, which stop every thread (not profiled). Running independent processes may
+scale better.
 
 ### Version 0.4, for comparison
 

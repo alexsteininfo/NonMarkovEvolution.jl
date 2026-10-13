@@ -8,8 +8,8 @@
   one tree serve every ``m``; see [Neutral evolution](selection.md#Neutral-evolution).
 - **Extinct lineages** are pruned, because under a supercritical process they dominate
   memory and contribute to no observable of the survivors. Questions about lineages that
-  failed (how many clones were lost to drift) need an `on_division` hook that records
-  them as they happen.
+  failed (how many clones were lost to drift) need `on_division` and `on_death` hooks
+  that record them as they happen.
 - **Spatial structure.** Cells have no position; spatial growth belongs in a different
   simulator.
 - **Clone-level bookkeeping.** At ``ν \gtrsim 0.1`` every cell has a distinct fitness

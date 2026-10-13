@@ -124,6 +124,8 @@ function _queue_loop!(pop::Population, q::EventQueue, block::NonMarkovBlock,
             push!(q, e2)
         else
             pop!(q)
+            # Before removal, so the hook can still read the cell and its ancestry.
+            isnothing(block.on_death) || block.on_death(pop, CellNode(tree, event.node))
             _die!(pop, event.node)
             _maybe_compact!(pop, _no_alive_vector)
         end

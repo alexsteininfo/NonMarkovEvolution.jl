@@ -118,7 +118,8 @@ end
             fitness_update = (f, δ) -> f,
             ν              = 2.0,
         )
-        block = hooks ? NonMarkovBlock(; kwargs..., on_division = nothing, on_restart = nothing) :
+        block = hooks ? NonMarkovBlock(; kwargs..., on_division = nothing, on_restart = nothing,
+                                       on_death = nothing) :
                         NonMarkovBlock(; kwargs...)
         simulate!(pop, block, rng)
         return pop

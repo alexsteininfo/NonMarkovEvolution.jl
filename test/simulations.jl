@@ -338,6 +338,110 @@ end
     end
 end
 
+# ── on_death hook ─────────────────────────────────────────────────────────────
+
+@testset "on_death defaults to nothing" begin
+    @test isnothing(make_block(Nmax = 20).on_death)
+end
+
+@testset "on_death fires once per death, before the cell is removed ($alg)" for alg in (:queue, :thinning)
+    # Start from 20 cells so that the population cannot die out. A running count checks
+    # both hooks' view of popsize: after a division it already includes both daughters,
+    # at a death it still includes the dying cell.
+    n        = Ref(20)
+    deaths   = Int64[]
+    order_ok = Ref(true)
+    cell_ok  = Ref(true)
+    block = NonMarkovBlock(
+        birth_dist     = f -> Exponential(1.0),
+        death_dist     = f -> Exponential(1 / 0.6),
+        effect_dist    = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 1.0,
+        stopfunction   = pop -> popsize(pop) >= 300,
+        algorithm      = alg,
+        on_division    = function (pop, parent, d1, d2)
+            n[] += 1
+            popsize(pop) == n[] || (order_ok[] = false)
+            return nothing
+        end,
+        on_death       = function (pop, cell)
+            popsize(pop) == n[] || (order_ok[] = false)
+            # Still alive and readable, and still linked into the tree (founders are roots).
+            p = cell.parent
+            (isalive(cell) && cell.fitness == 1.0 &&
+             (isnothing(p) || cell == p.left || cell == p.right)) || (cell_ok[] = false)
+            push!(deaths, cell.id)
+            n[] -= 1
+            return nothing
+        end,
+    )
+    pop = simulate!(initialize_population(20), block, Xoshiro(7))
+    @test popsize(pop) >= 300
+    @test !isempty(deaths)
+    @test allunique(deaths)
+    @test order_ok[]
+    @test cell_ok[]
+    @test popsize(pop) == n[]
+    @test isdisjoint(deaths, (c.id for c in alive_cells(pop)))
+end
+
+@testset "a non-drawing on_death leaves the run unchanged ($alg)" for alg in (:queue, :thinning)
+    function _run(hook)
+        block = NonMarkovBlock(
+            birth_dist     = f -> Exponential(1 / f),
+            death_dist     = f -> Exponential(1 / 0.5),
+            effect_dist    = Exponential(0.05), fitness_update = (f, δ) -> f + δ, ν = 1.0,
+            stopfunction   = pop -> popsize(pop) >= 200,
+            restart_on_extinction = true, algorithm = alg, on_death = hook)
+        return simulate!(initialize_population(), block, Xoshiro(11))
+    end
+    deaths = Ref(0)
+    a, b = _run(nothing), _run((pop, cell) -> (deaths[] += 1; nothing))
+    @test deaths[] > 0
+    @test a.t === b.t
+    @test fitness_per_cell(a) == fitness_per_cell(b)
+    @test mutations_per_cell(a) == mutations_per_cell(b)
+end
+
+@testset "on_division + on_death track a clone exactly, and stop on its loss ($alg)" for alg in (:queue, :thinning)
+    # The use case the hook exists for: inject one mutation, follow its clone cell by
+    # cell, and stop the attempt as soon as the clone is lost. The tracked set must equal
+    # the clone's living cells at the end, whichever way the attempt ended.
+    function _attempt(seed)
+        clone    = Set{Int64}()
+        injected = Ref(false)
+        block = NonMarkovBlock(
+            birth_dist     = f -> Exponential(1 / f),
+            death_dist     = f -> Exponential(1 / 0.8),
+            effect_dist    = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
+            restart_on_extinction = true, algorithm = alg,
+            stopfunction   = pop -> popsize(pop) >= 400 || (injected[] && isempty(clone)),
+            on_division    = function (pop, parent, d1, d2)
+                if !injected[] && popsize(pop) == 6
+                    injected[] = true
+                    set_fitness!(d1, 1.5)
+                    push!(clone, d1.id)
+                elseif parent.id in clone
+                    delete!(clone, parent.id)
+                    push!(clone, d1.id, d2.id)
+                end
+                return nothing
+            end,
+            on_death       = (pop, cell) -> (delete!(clone, cell.id); nothing),
+            on_restart     = pop -> (injected[] = false; empty!(clone); nothing),
+        )
+        pop = simulate!(initialize_population(), block, Xoshiro(seed))
+        return (pop = pop, clone = clone, injected = injected[])
+    end
+    runs = [_attempt(seed) for seed in 1:30]
+    @test all(r -> r.injected, runs)
+    @test all(r -> r.clone == Set(c.id for c in alive_cells(r.pop) if c.fitness > 1.0), runs)
+    lost = [r for r in runs if isempty(r.clone)]
+    kept = [r for r in runs if !isempty(r.clone)]
+    @test !isempty(lost) && !isempty(kept)
+    @test all(r -> popsize(r.pop) < 400, lost)       # stopped early, on the loss
+    @test all(r -> popsize(r.pop) >= 400, kept)
+end
+
 # ── Block construction and the exact time stop ────────────────────────────────
 
 @testset "NonMarkovBlock validates its inputs" begin

@@ -15,6 +15,7 @@ block = NonMarkovBlock(
     tmax           = Inf,                             # default: no time limit
     restart_on_extinction = false,
     on_division    = nothing,
+    on_death       = nothing,
     on_restart     = nothing,
     algorithm      = :auto,                           # :queue or :thinning
 )
@@ -31,6 +32,7 @@ block = NonMarkovBlock(
 | `tmax` | `Real` | stop at exactly this time |
 | `restart_on_extinction` | `Bool` | retry from the starting state if the population dies |
 | `on_division` | `(pop, parent, d1, d2) -> nothing` | hook at every division |
+| `on_death` | `(pop, cell) -> nothing` | hook at every death, before the cell is removed |
 | `on_restart` | `pop -> nothing` | hook after an extinction restart |
 | `algorithm` | `:auto`, `:queue`, `:thinning` | how events are generated; see [below](#Choosing-the-algorithm) |
 
@@ -211,7 +213,9 @@ are rescheduled conditioned on their age, so restarts are exact on any block.
   that later dies; reset it in `on_restart` (below).
 
 For a more selective retry (say, until a mutation clone survives drift), leave the flag off
-and loop yourself, with a fresh closure per attempt:
+and loop yourself, with a fresh closure per attempt. To abandon a doomed attempt early
+rather than run it to the end, track the clone with `on_division` and `on_death` and let
+`stopfunction` read it; see [`on_death`](#on_death).
 
 ```julia
 function attempt(seed)
@@ -269,10 +273,50 @@ for the clone. Keep hook state in the closure: the package holds no global mutab
 does not draw from `rng` leaves the random stream untouched, so a watcher can be added to
 an existing run without changing its result.
 
+### `on_death`
+
+`on_death(pop, cell)` runs once per death, **before** the cell is removed: it is still a
+living leaf, counted in `popsize(pop)` (a population of `M` cells reads as `M`), and its
+id, fitness and ancestry can be read. Afterwards the cell and every ancestor left without
+living descendants are pruned. Do not change the tree from this hook.
+
+Together with `on_division` it keeps exact, event-by-event bookkeeping that the tree
+alone only gives afterwards — for instance the living cells of an injected clone, so that
+an attempt stops the moment the clone is lost:
+
+```julia
+clone    = Set{Int64}()                  # living cells of the injected clone
+injected = Ref(false)
+block = NonMarkovBlock(
+    birth_dist     = f -> Exponential(1 / f),
+    death_dist     = f -> Exponential(1 / 0.8),
+    effect_dist    = Dirac(0.0), fitness_update = (f, δ) -> f, ν = 0.0,
+    restart_on_extinction = true,
+    stopfunction   = pop -> popsize(pop) >= 10_000 || (injected[] && isempty(clone)),
+    on_division = function (pop, parent, d1, d2)
+        if !injected[] && popsize(pop) == N_critic + 1
+            injected[] = true
+            set_fitness!(d1, 1.0 + s)
+            push!(clone, d1.id)
+        elseif parent.id in clone                 # a clone cell divided
+            delete!(clone, parent.id)
+            push!(clone, d1.id, d2.id)
+        end
+        return nothing
+    end,
+    on_death   = (pop, cell) -> (delete!(clone, cell.id); nothing),
+    on_restart = pop -> (injected[] = false; empty!(clone); nothing),
+)
+```
+
+Tracking by id rather than by fitness also works when the injected mutation is neutral
+(`s = 0`). Like `on_division`, a hook that does not draw from `rng` leaves the run
+unchanged.
+
 ### `on_restart`
 
 `on_restart(pop)` runs after each extinction restart, and exists to reset state your
-closures own — as `injected` above. It is only called when
+closures own — as `injected` and `clone` above. It is only called when
 `restart_on_extinction = true`.
 
 ## Chaining blocks

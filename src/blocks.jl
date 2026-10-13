@@ -2,7 +2,7 @@
     NonMarkovBlock(; birth_dist, death_dist, effect_dist, fitness_update, ν,
                      stopfunction = pop -> false, tmax = Inf,
                      restart_on_extinction = false, on_division = nothing,
-                     on_restart = nothing, algorithm = :auto)
+                     on_death = nothing, on_restart = nothing, algorithm = :auto)
 
 Everything the cells do during one [`simulate!`](@ref) call.
 
@@ -18,6 +18,9 @@ Everything the cells do during one [`simulate!`](@ref) call.
   population dies out.
 - `on_division` — `(pop, parent, d1, d2) -> nothing`, called after each division and
   before the daughters are scheduled. Change a daughter with [`set_fitness!`](@ref).
+- `on_death` — `(pop, cell) -> nothing`, called at each death just before the cell is
+  removed: `cell` is still alive and counted in `popsize(pop)`, so its id, fitness and
+  ancestry can be read. Do not change the tree from it.
 - `on_restart` — `pop -> nothing`, called after each extinction restart, to reset
   state kept in your hook closures. Drop any `CellNode` kept from the failed attempt
   there: the restart reuses its cells' ids.
@@ -36,7 +39,7 @@ The distributions are checked once at construction by calling them with `f = 1.0
 the manual pages *The simulation block* and *Mutations and selection* for waiting-time
 parameterisations, stop conditions, hooks and selection modes.
 """
-struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
+struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, F7, D}
     birth_dist::F1
     death_dist::F2
     stopfunction::F3
@@ -47,12 +50,14 @@ struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
     restart_on_extinction::Bool
     on_division::F5
     on_restart::F6
+    on_death::F7
     algorithm::Symbol
 
     function NonMarkovBlock(birth_dist::F1, death_dist::F2, stopfunction::F3,
                             effect_dist::D, fitness_update::F4, ν::Real, tmax::Real,
                             restart_on_extinction::Bool, on_division::F5,
-                            on_restart::F6, algorithm::Symbol) where {F1, F2, F3, F4, F5, F6, D}
+                            on_restart::F6, on_death::F7,
+                            algorithm::Symbol) where {F1, F2, F3, F4, F5, F6, F7, D}
         ν >= 0 || throw(ArgumentError("NonMarkovBlock: ν must be >= 0, got $ν"))
         isnan(tmax) && throw(ArgumentError("NonMarkovBlock: tmax must not be NaN"))
         effect_dist isa Sampleable{Univariate} || throw(ArgumentError(
@@ -65,9 +70,9 @@ struct NonMarkovBlock{F1, F2, F3, F4, F5, F6, D}
                 "$name(1.0) returned a $(typeof(d))"))
         end
         resolved = _resolve_algorithm(algorithm, birth_dist, death_dist)
-        return new{F1, F2, F3, F4, F5, F6, D}(birth_dist, death_dist, stopfunction,
+        return new{F1, F2, F3, F4, F5, F6, F7, D}(birth_dist, death_dist, stopfunction,
             effect_dist, fitness_update, ν, tmax, restart_on_extinction, on_division,
-            on_restart, resolved)
+            on_restart, on_death, resolved)
     end
 end
 
@@ -93,8 +98,9 @@ end
 function NonMarkovBlock(; birth_dist, death_dist, effect_dist, fitness_update, ν,
                         stopfunction = Returns(false), tmax::Real = Inf,
                         restart_on_extinction::Bool = false, on_division = nothing,
-                        on_restart = nothing, algorithm::Symbol = :auto)
+                        on_death = nothing, on_restart = nothing,
+                        algorithm::Symbol = :auto)
     return NonMarkovBlock(birth_dist, death_dist, stopfunction, effect_dist,
                           fitness_update, ν, tmax, restart_on_extinction, on_division,
-                          on_restart, algorithm)
+                          on_restart, on_death, algorithm)
 end
